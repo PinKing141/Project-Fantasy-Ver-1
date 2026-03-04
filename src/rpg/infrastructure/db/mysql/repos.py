@@ -300,6 +300,15 @@ class MysqlCharacterRepository(CharacterRepository):
         return "armour_class"
 
     @staticmethod
+    def _character_ac_candidates(session) -> list[str]:
+        preferred = MysqlCharacterRepository._character_ac_column(session)
+        candidates: list[str] = []
+        for candidate in (preferred, "armour_class", "armor_class"):
+            if candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
+
+    @staticmethod
     def _character_json_payload(character: Character) -> tuple[str, str]:
         inventory_payload = json.dumps(list(getattr(character, "inventory", []) or []))
         flags_payload = json.dumps(dict(getattr(character, "flags", {}) or {}))
@@ -602,42 +611,55 @@ class MysqlCharacterRepository(CharacterRepository):
         with SessionLocal() as session:
             ctype_id = self._resolve_character_type_id(session)
             has_inventory_json, has_flags_json = self._character_json_column_flags(session)
-            ac_column = self._character_ac_column(session)
             inventory_payload, flags_payload = self._character_json_payload(character)
-
-            create_columns = f"character_type_id, name, alive, level, xp, money, hp_current, hp_max, {ac_column}, armor, attack_bonus, damage_die, speed"
             create_values = ":ctype, :name, 1, :level, :xp, :money, :hp_current, :hp_max, :armour_class, :armor, :attack_bonus, :damage_die, :speed"
             if has_inventory_json:
-                create_columns += ", inventory_json"
                 create_values += ", :inventory_json"
             if has_flags_json:
-                create_columns += ", flags_json"
                 create_values += ", :flags_json"
 
-            result = session.execute(
-                text(
-                    f"""
-                    INSERT INTO `character` ({create_columns})
-                    VALUES ({create_values})
-                    """
-                ),
-                {
-                    "ctype": ctype_id,
-                    "name": character.name,
-                    "level": character.level,
-                    "xp": character.xp,
-                    "money": character.money,
-                    "hp_current": character.hp_current,
-                    "hp_max": character.hp_max,
-                    "armour_class": character.armour_class,
-                    "armor": character.armor,
-                    "attack_bonus": character.attack_bonus,
-                    "damage_die": character.damage_die,
-                    "speed": character.speed,
-                    "inventory_json": inventory_payload,
-                    "flags_json": flags_payload,
-                },
-            )
+            payload = {
+                "ctype": ctype_id,
+                "name": character.name,
+                "level": character.level,
+                "xp": character.xp,
+                "money": character.money,
+                "hp_current": character.hp_current,
+                "hp_max": character.hp_max,
+                "armour_class": character.armour_class,
+                "armor": character.armor,
+                "attack_bonus": character.attack_bonus,
+                "damage_die": character.damage_die,
+                "speed": character.speed,
+                "inventory_json": inventory_payload,
+                "flags_json": flags_payload,
+            }
+            result = None
+            for ac_column in self._character_ac_candidates(session):
+                create_columns = f"character_type_id, name, alive, level, xp, money, hp_current, hp_max, {ac_column}, armor, attack_bonus, damage_die, speed"
+                if has_inventory_json:
+                    create_columns += ", inventory_json"
+                if has_flags_json:
+                    create_columns += ", flags_json"
+                try:
+                    result = session.execute(
+                        text(
+                            f"""
+                            INSERT INTO `character` ({create_columns})
+                            VALUES ({create_values})
+                            """
+                        ),
+                        payload,
+                    )
+                    break
+                except ProgrammingError as exc:
+                    error_text = str(exc).lower()
+                    if f"unknown column '{ac_column}'" in error_text and ac_column != self._character_ac_candidates(session)[-1]:
+                        continue
+                    raise
+
+            if result is None:
+                raise RuntimeError("Unable to insert character due to unsupported armor class column schema")
             character_id = result.lastrowid
 
             class_id = self._resolve_class_id(session, character.class_name or "fighter")

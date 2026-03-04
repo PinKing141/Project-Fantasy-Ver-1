@@ -4,6 +4,7 @@ import unittest
 from unittest import mock
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -266,6 +267,53 @@ class MysqlCharacterRepositoryArmorClassDetectionTests(unittest.TestCase):
     def test_character_ac_column_falls_back_to_query_probe_for_american_spelling(self) -> None:
         with self.SessionLocal() as session:
             self.assertEqual("armor_class", self.repo._character_ac_column(session))
+
+    def test_create_retries_with_alternate_ac_column_when_schema_probe_is_stale(self) -> None:
+        character = mock.MagicMock()
+        character.name = "Valis"
+        character.level = 1
+        character.xp = 0
+        character.money = 9
+        character.hp_current = 13
+        character.hp_max = 13
+        character.armour_class = 13
+        character.armor = 0
+        character.attack_bonus = 4
+        character.damage_die = "d12"
+        character.speed = 30
+        character.class_name = "fighter"
+        character.attributes = {}
+        character.flags = {}
+        character.inventory = []
+
+        session = mock.MagicMock()
+        context = mock.MagicMock()
+        context.__enter__.return_value = session
+        context.__exit__.return_value = False
+
+        missing_ac = ProgrammingError(
+            "INSERT",
+            {},
+            Exception("1054 (42S22): Unknown column 'armour_class' in 'field list'"),
+        )
+        insert_result = mock.MagicMock()
+        insert_result.lastrowid = 99
+        session.execute.side_effect = [missing_ac, insert_result, None, None]
+
+        with (
+            mock.patch.object(mysql_repos, "SessionLocal", return_value=context),
+            mock.patch.object(mysql_repos, "_table_columns", return_value={"armour_class", "armor_class"}),
+            mock.patch.object(MysqlCharacterRepository, "_resolve_character_type_id", return_value=1),
+            mock.patch.object(MysqlCharacterRepository, "_resolve_class_id", return_value=1),
+            mock.patch.object(MysqlCharacterRepository, "_character_json_column_flags", return_value=(False, False)),
+        ):
+            created = MysqlCharacterRepository().create(character, location_id=1)
+
+        first_sql = str(session.execute.call_args_list[0].args[0])
+        second_sql = str(session.execute.call_args_list[1].args[0])
+        self.assertIn("armour_class", first_sql)
+        self.assertIn("armor_class", second_sql)
+        self.assertEqual(99, created.id)
 
 
 class MysqlQuestTemplateRepositoryTests(unittest.TestCase):
