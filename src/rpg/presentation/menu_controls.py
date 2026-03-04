@@ -119,6 +119,7 @@ def arrow_menu(
     options: list[str],
     footer_hint: str | None = None,
     initial_enter_guard_seconds: float | None = None,
+    center_text: bool = False,
 ) -> int:
     """Render a vertical menu controlled by arrow keys.
 
@@ -182,17 +183,29 @@ def arrow_menu(
     def _build_rich_panel(index: int):
         panel_cls = Panel
         body_lines: list[str] = []
-        body_lines.append("[#d6c59d]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/#d6c59d]")
+        if center_text:
+            body_lines.append("[center][#d6c59d]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/#d6c59d][/center]")
+        else:
+            body_lines.append("[#d6c59d]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/#d6c59d]")
         for idx, option in enumerate(options):
             if idx == index:
-                body_lines.append(f"[bold black on bright_cyan] ▶ {option} [/bold black on bright_cyan]")
+                line = f"[bold black on bright_cyan] ▶ {option} [/bold black on bright_cyan]"
             else:
-                body_lines.append(f"[white]  {option}[/white]")
+                line = f"[white]  {option}[/white]"
+            if center_text:
+                body_lines.append(f"[center]{line}[/center]")
+            else:
+                body_lines.append(line)
         body_lines.append("")
-        body_lines.append("[#d6c59d]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/#d6c59d]")
+        if center_text:
+            body_lines.append("[center][#d6c59d]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/#d6c59d][/center]")
+        else:
+            body_lines.append("[#d6c59d]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/#d6c59d]")
         if footer_hint:
-            body_lines.append(f"[yellow]{footer_hint}[/yellow]")
-        body_lines.append("[bold white]Use arrow keys to move, ENTER to select, ESC to cancel.[/bold white]")
+            footer_line = f"[yellow]{footer_hint}[/yellow]"
+            body_lines.append(f"[center]{footer_line}[/center]" if center_text else footer_line)
+        control_line = "[bold white]Use arrow keys to move, ENTER to select, ESC to cancel.[/bold white]"
+        body_lines.append(f"[center]{control_line}[/center]" if center_text else control_line)
         panel_width = 72
         if _CONSOLE is not None:
             try:
@@ -206,7 +219,7 @@ def arrow_menu(
             title=_decorate_title(title),
             border_style="cyan",
             subtitle="[bold white]↑/↓ Navigate • Enter Confirm • Esc Back[/bold white]",
-            subtitle_align="left",
+            subtitle_align="center" if center_text else "left",
             padding=(0, 1),
             width=panel_width,
             expand=False,
@@ -254,13 +267,15 @@ def arrow_menu(
 
         for idx, option in enumerate(options):
             prefix = "> " if idx == selected else "  "
-            print(f"{prefix}{option}")
+            row_text = f"{prefix}{option}"
+            print(f"{row_text:^40}" if center_text else row_text)
 
         print("")
         if footer_hint:
-            print(footer_hint)
+            print(f"{footer_hint:^40}" if center_text else footer_hint)
         print("-" * 40)
-        print("Use arrow keys to move, ENTER to select, ESC to cancel.")
+        controls = "Use arrow keys to move, ENTER to select, ESC to cancel."
+        print(f"{controls:^40}" if center_text else controls)
         print("-" * 40)
 
         raw_key = read_key()

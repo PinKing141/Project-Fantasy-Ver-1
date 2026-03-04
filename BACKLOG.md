@@ -1,4 +1,4 @@
-# Project Moonlight Backlog
+# Project Fantasy Ver 1 Backlog
 
 Purpose: Capture feature ideas discovered during playtesting without violating the implementation freeze.
 

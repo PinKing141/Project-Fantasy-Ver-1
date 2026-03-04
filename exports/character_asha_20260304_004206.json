@@ -1,0 +1,29 @@
+{
+  "schema": "character_export_v1",
+  "name": "Asha",
+  "class_name": "Fighter",
+  "subclass_slug": "",
+  "ability_scores": {
+    "STR": 10,
+    "DEX": 10,
+    "CON": 10,
+    "INT": 10,
+    "WIS": 10,
+    "CHA": 10
+  },
+  "race": "Human",
+  "subrace": "",
+  "background": "Acolyte",
+  "difficulty": "Normal",
+  "alignment": "true_neutral",
+  "starting_equipment_override": [],
+  "starting_gold_bonus": 0,
+  "selected_cantrips": [],
+  "selected_known_spells": [],
+  "selected_tool_proficiencies": [],
+  "selected_languages": [],
+  "personality_profile": {},
+  "class_feature_choices": {},
+  "selected_feat_slug": "",
+  "generated_name_gender": "female"
+}

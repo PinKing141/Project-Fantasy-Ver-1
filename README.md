@@ -102,6 +102,26 @@ set RPG_CLI_LIVE_FSM=1
 python -m rpg
 ```
 
+Windows executable build (PyInstaller):
+
+```bash
+build_game_exe.bat
+```
+
+Build artifacts are generated in:
+
+- `dist/ProjectFantasyVer1.exe` (primary executable)
+- `dist/data/` (runtime content copied for standalone launch)
+- `build/` (intermediate PyInstaller build files)
+
+Notes:
+- This build uses the CLI entrypoint (`src/rpg/__main__.py`) so keyboard controls work in the packaged app.
+- The build script also copies `data/` to `dist/data/` to avoid missing-content errors when launching the EXE directly.
+
+Packaged executable output:
+
+- `release/windows/ProjectFantasyVer1/ProjectFantasyVer1.exe`
+
 Notes:
 - Live mode is opt-in and leaves the existing arrow-menu loop as default.
 - If Rich is unavailable, runtime automatically falls back to the default loop.

@@ -1,6 +1,6 @@
 # Contributor Runbook
 
-This runbook is the quickest path to run Project Moonlight from a clean checkout.
+This runbook is the quickest path to run Project Fantasy Ver 1 from a clean checkout.
 
 ## 1) Environment
 
@@ -10,7 +10,7 @@ This runbook is the quickest path to run Project Moonlight from a clean checkout
 ## 2) Install dependencies
 
 ```bash
-C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pip install -e .
+.venv\Scripts\python.exe -m pip install -e .
 ```
 
 ## 3) Run with in-memory persistence (zero external services)

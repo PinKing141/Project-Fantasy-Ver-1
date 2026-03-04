@@ -25,6 +25,15 @@ def _print_help_surface() -> None:
     print("- Startup issues: verify RPG_DATABASE_URL or unset it to use in-memory mode.")
 
 
+def _apply_console_colour_defaults() -> None:
+    if os.name != "nt":
+        return
+    try:
+        os.system("color 0F")
+    except Exception:
+        return
+
+
 def _is_mysql_rng_seed_schema_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return "unknown column 'rng_seed'" in text or ("unknown column" in text and "rng_seed" in text)
@@ -57,6 +66,7 @@ def _open_main_menu(game_service):
 
 def main():
     try:
+        _apply_console_colour_defaults()
         with startup_loading_screen("Booting Realm of Broken Stars..."):
             game_service = _create_game_service()
         _open_main_menu(game_service)

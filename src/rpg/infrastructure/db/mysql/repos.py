@@ -277,6 +277,15 @@ class MysqlCharacterRepository(CharacterRepository):
         return "inventory_json" in columns, "flags_json" in columns
 
     @staticmethod
+    def _character_ac_column(session) -> str:
+        columns = _table_columns(session, "character")
+        if "armour_class" in columns:
+            return "armour_class"
+        if "armor_class" in columns:
+            return "armor_class"
+        return "armour_class"
+
+    @staticmethod
     def _character_json_payload(character: Character) -> tuple[str, str]:
         inventory_payload = json.dumps(list(getattr(character, "inventory", []) or []))
         flags_payload = json.dumps(dict(getattr(character, "flags", {}) or {}))
@@ -285,6 +294,7 @@ class MysqlCharacterRepository(CharacterRepository):
     def get(self, character_id: int) -> Optional[Character]:
         with SessionLocal() as session:
             has_inventory_json, has_flags_json = self._character_json_column_flags(session)
+            ac_column = self._character_ac_column(session)
             extra_select = ""
             if has_inventory_json:
                 extra_select += ", c.inventory_json AS inventory_json"
@@ -295,7 +305,7 @@ class MysqlCharacterRepository(CharacterRepository):
                     f"""
                     SELECT c.character_id, c.name, c.alive, c.level, c.xp, c.money,
                               c.character_type_id, c.hp_current, c.hp_max,
-                              c.armour_class, c.armor, c.attack_bonus, c.damage_die, c.speed,
+                                        c.{ac_column} AS armour_class, c.armor, c.attack_bonus, c.damage_die, c.speed,
                               {"" if not extra_select else extra_select[2:]},
                            cl.location_id, cls.name AS class_name
                     FROM `character` c
@@ -338,6 +348,7 @@ class MysqlCharacterRepository(CharacterRepository):
     def list_all(self) -> List[Character]:
         with SessionLocal() as session:
             has_inventory_json, has_flags_json = self._character_json_column_flags(session)
+            ac_column = self._character_ac_column(session)
             extra_select = ""
             if has_inventory_json:
                 extra_select += ", c.inventory_json AS inventory_json"
@@ -348,7 +359,7 @@ class MysqlCharacterRepository(CharacterRepository):
                     f"""
                     SELECT c.character_id, c.name, c.alive, c.level, c.xp, c.money,
                               c.character_type_id, c.hp_current, c.hp_max,
-                              c.armour_class, c.armor, c.attack_bonus, c.damage_die, c.speed,
+                              c.{ac_column} AS armour_class, c.armor, c.attack_bonus, c.damage_die, c.speed,
                               {"" if not extra_select else extra_select[2:]},
                               cl.location_id
                     FROM `character` c
@@ -385,9 +396,10 @@ class MysqlCharacterRepository(CharacterRepository):
         with SessionLocal() as session:
             dialect = session.bind.dialect.name if session.bind is not None else "mysql"
             has_inventory_json, has_flags_json = self._character_json_column_flags(session)
+            ac_column = self._character_ac_column(session)
             inventory_payload, flags_payload = self._character_json_payload(character)
 
-            character_columns = "character_id, name, alive, level, xp, money, character_type_id, hp_current, hp_max, armour_class, armor, attack_bonus, damage_die, speed"
+            character_columns = f"character_id, name, alive, level, xp, money, character_type_id, hp_current, hp_max, {ac_column}, armor, attack_bonus, damage_die, speed"
             character_values = ":cid, :name, :alive, :level, :xp, :money, :ctype, :hp_current, :hp_max, :armour_class, :armor, :attack_bonus, :damage_die, :speed"
             update_mysql = """
                         name = VALUES(name),
@@ -398,7 +410,7 @@ class MysqlCharacterRepository(CharacterRepository):
                         character_type_id = VALUES(character_type_id),
                         hp_current = VALUES(hp_current),
                         hp_max = VALUES(hp_max),
-                        armour_class = VALUES(armour_class),
+                        {ac_column} = VALUES({ac_column}),
                         armor = VALUES(armor),
                         attack_bonus = VALUES(attack_bonus),
                         damage_die = VALUES(damage_die),
@@ -413,7 +425,7 @@ class MysqlCharacterRepository(CharacterRepository):
                         character_type_id = excluded.character_type_id,
                         hp_current = excluded.hp_current,
                         hp_max = excluded.hp_max,
-                        armour_class = excluded.armour_class,
+                        {ac_column} = excluded.{ac_column},
                         armor = excluded.armor,
                         attack_bonus = excluded.attack_bonus,
                         damage_die = excluded.damage_die,
@@ -520,6 +532,7 @@ class MysqlCharacterRepository(CharacterRepository):
     def find_by_location(self, location_id: int) -> List[Character]:
         with SessionLocal() as session:
             has_inventory_json, has_flags_json = self._character_json_column_flags(session)
+            ac_column = self._character_ac_column(session)
             extra_select = ""
             if has_inventory_json:
                 extra_select += ", c.inventory_json AS inventory_json"
@@ -530,7 +543,7 @@ class MysqlCharacterRepository(CharacterRepository):
                     f"""
                     SELECT c.character_id, c.name, c.alive, c.level, c.xp, c.money,
                               c.character_type_id, c.hp_current, c.hp_max,
-                              c.armour_class, c.armor, c.attack_bonus, c.damage_die, c.speed,
+                                        c.{ac_column} AS armour_class, c.armor, c.attack_bonus, c.damage_die, c.speed,
                               {"" if not extra_select else extra_select[2:]},
                            cl.location_id, cls.name AS class_name
                     FROM `character` c
@@ -575,9 +588,10 @@ class MysqlCharacterRepository(CharacterRepository):
         with SessionLocal() as session:
             ctype_id = self._resolve_character_type_id(session)
             has_inventory_json, has_flags_json = self._character_json_column_flags(session)
+            ac_column = self._character_ac_column(session)
             inventory_payload, flags_payload = self._character_json_payload(character)
 
-            create_columns = "character_type_id, name, alive, level, xp, money, hp_current, hp_max, armour_class, armor, attack_bonus, damage_die, speed"
+            create_columns = f"character_type_id, name, alive, level, xp, money, hp_current, hp_max, {ac_column}, armor, attack_bonus, damage_die, speed"
             create_values = ":ctype, :name, 1, :level, :xp, :money, :hp_current, :hp_max, :armour_class, :armor, :attack_bonus, :damage_die, :speed"
             if has_inventory_json:
                 create_columns += ", inventory_json"

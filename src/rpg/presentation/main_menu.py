@@ -5,7 +5,7 @@ from rpg.infrastructure.analysis.narrative_quality_batch import maybe_emit_sessi
 from rpg.presentation.character_creation_ui import run_character_creation
 from rpg.presentation.game_loop import run_game_loop
 from rpg.presentation.live_game_loop import run_live_game_loop
-from rpg.presentation.load_menu import choose_existing_character
+from rpg.presentation.load_menu import choose_existing_character, import_character_from_export
 from rpg.presentation.menu_controls import arrow_menu, clear_screen
 from rpg.presentation.music import get_music_player
 from rpg.presentation.sound_effects import get_sound_effects
@@ -69,7 +69,7 @@ def _show_main_splash() -> None:
 
 
 def main_menu(game_service: GameService) -> None:
-    options = ["New Game", "Continue", "Help", "Credits", "Quit"]
+    options = ["New Game", "Continue", "Import Exported Character", "Help", "Credits", "Quit"]
     session_character_id: int | None = None
     sfx = get_sound_effects()
     music = get_music_player()
@@ -90,6 +90,7 @@ def main_menu(game_service: GameService) -> None:
             menu_title,
             options,
             initial_enter_guard_seconds=0.35,
+            center_text=True,
         )
 
         if choice_idx == 0:  # New Game
@@ -114,7 +115,18 @@ def main_menu(game_service: GameService) -> None:
                 else:
                     run_game_loop(game_service, character_id)
 
-        elif choice_idx == 2:  # Help
+        elif choice_idx == 2:  # Import
+            sfx.play("menu_select")
+            character_id = import_character_from_export(game_service)
+            if character_id is not None:
+                session_character_id = character_id
+                sfx.play("game_start")
+                if _use_live_fsm_cli():
+                    run_live_game_loop(game_service, character_id)
+                else:
+                    run_game_loop(game_service, character_id)
+
+        elif choice_idx == 3:  # Help
             sfx.play("menu_back")
             clear_screen()
             if _CONSOLE is not None and Panel is not None:
@@ -146,7 +158,7 @@ def main_menu(game_service: GameService) -> None:
             input("Press ENTER to return to the menu...")
             clear_screen()
 
-        elif choice_idx == 3:  # Credits
+        elif choice_idx == 4:  # Credits
             sfx.play("menu_back")
             clear_screen()
             if _CONSOLE is not None and Panel is not None:
@@ -160,7 +172,7 @@ def main_menu(game_service: GameService) -> None:
             input("Press ENTER to return to the menu...")
             clear_screen()
 
-        elif choice_idx == 4 or choice_idx == -1:  # Quit or ESC
+        elif choice_idx == 5 or choice_idx == -1:  # Quit or ESC
             sfx.play("quit")
             music.stop()
             report_path = maybe_emit_session_quality_report(game_service, character_id=session_character_id)

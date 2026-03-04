@@ -29,6 +29,15 @@ def _table_columns(session, table_name: str) -> set[str]:
     return {str(row.COLUMN_NAME).lower() for row in rows}
 
 
+def _character_ac_column(session) -> str:
+    columns = _table_columns(session, "character")
+    if "armour_class" in columns:
+        return "armour_class"
+    if "armor_class" in columns:
+        return "armor_class"
+    return "armour_class"
+
+
 def save_character_and_world_atomic(
     character: Character,
     world: World,
@@ -49,10 +58,11 @@ def _upsert_character_row(session, character: Character) -> None:
     columns = _table_columns(session, "character")
     has_inventory_json = "inventory_json" in columns
     has_flags_json = "flags_json" in columns
+    ac_column = _character_ac_column(session)
 
-    character_columns = "character_id, name, alive, level, xp, money, character_type_id, hp_current, hp_max, armour_class, armor, attack_bonus, damage_die, speed"
-    character_values = ":cid, :name, :alive, :level, :xp, :money, :ctype, :hp_current, :hp_max, :armour_class, :armor, :attack_bonus, :damage_die, :speed"
-    update_mysql = """
+    character_columns = f"character_id, name, alive, level, xp, money, character_type_id, hp_current, hp_max, {ac_column}, armor, attack_bonus, damage_die, speed"
+    character_values = ":cid, :name, :alive, :level, :xp, :money, :ctype, :hp_current, :hp_max, :ac_value, :armor, :attack_bonus, :damage_die, :speed"
+    update_mysql = f"""
                 name = VALUES(name),
                 alive = VALUES(alive),
                 level = VALUES(level),
@@ -61,13 +71,13 @@ def _upsert_character_row(session, character: Character) -> None:
                 character_type_id = VALUES(character_type_id),
                 hp_current = VALUES(hp_current),
                 hp_max = VALUES(hp_max),
-                armour_class = VALUES(armour_class),
+                {ac_column} = VALUES({ac_column}),
                 armor = VALUES(armor),
                 attack_bonus = VALUES(attack_bonus),
                 damage_die = VALUES(damage_die),
                 speed = VALUES(speed)
     """
-    update_sqlite = """
+    update_sqlite = f"""
                 name = excluded.name,
                 alive = excluded.alive,
                 level = excluded.level,
@@ -76,7 +86,7 @@ def _upsert_character_row(session, character: Character) -> None:
                 character_type_id = excluded.character_type_id,
                 hp_current = excluded.hp_current,
                 hp_max = excluded.hp_max,
-                armour_class = excluded.armour_class,
+                {ac_column} = excluded.{ac_column},
                 armor = excluded.armor,
                 attack_bonus = excluded.attack_bonus,
                 damage_die = excluded.damage_die,
@@ -124,7 +134,7 @@ def _upsert_character_row(session, character: Character) -> None:
             "ctype": character.character_type_id,
             "hp_current": character.hp_current,
             "hp_max": character.hp_max,
-            "armour_class": character.armour_class,
+            "ac_value": character.armour_class,
             "armor": character.armor,
             "attack_bonus": character.attack_bonus,
             "damage_die": character.damage_die,

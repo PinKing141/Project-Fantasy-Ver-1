@@ -1,4 +1,4 @@
-# Project Moonlight — Execution Roadmap (Tracked)
+# Project Fantasy Ver 1 — Execution Roadmap (Tracked)
 
 **Purpose:** Execute development strictly phase-by-phase, with measurable completion evidence and anti-overcoding controls.
 
@@ -243,8 +243,8 @@ Ensure in-memory and MySQL adapters behave equivalently for application contract
 - **Done Evidence:**
   - Commit/patch refs: Updated `src/rpg/infrastructure/db/migrations/_apply_all.sql` to use portable relative `SOURCE` paths and include the full numbered chain (`001..003`); fixed MySQL-incompatible syntax in `src/rpg/infrastructure/db/migrations/002_add_spell_table.sql` and `src/rpg/infrastructure/db/migrations/003_update_entity_combat.sql`; added migration-chain reliability tests in `tests/unit/test_migration_chain.py`; added Python migration runner `src/rpg/infrastructure/db/mysql/migrate.py` for CLI-independent execution.
   - Docs update: Updated MySQL setup instructions in `README.md` to use `python -m rpg.infrastructure.db.mysql.migrate` (+ `--dry-run`).
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_mysql_migration_runner.py tests/unit/test_migration_chain.py tests/integration/test_atomic_persistence.py -q` → `8 passed`.
-  - Dry-run execution summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m rpg.infrastructure.db.mysql.migrate --dry-run` resolved 6 SQL files / 136 statements across base schema + migrations.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_mysql_migration_runner.py tests/unit/test_migration_chain.py tests/integration/test_atomic_persistence.py -q` → `8 passed`.
+  - Dry-run execution summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m rpg.infrastructure.db.mysql.migrate --dry-run` resolved 6 SQL files / 136 statements across base schema + migrations.
   - Live execution summary (clean install): On local MySQL `8.4.8` at `127.0.0.1:3307`, executed `_apply_all.sql` and validated schema markers: `world` seeded (`world_rows = 1`), `spell` table present, `entity.armour_class` present, `character.hp_current` present.
   - Live execution summary (incremental upgrade): Executed numbered baseline (`000_base_schema.sql`) followed by `001..003`, then validated `spell` table plus `entity` combat columns (`armour_class`, `attack_bonus`, `damage_dice`, `hp_max`, `kind`).
   - Environment note: `RPG_DATABASE_URL` set to `mysql+mysqlconnector://root@127.0.0.1:3307/rpg_game_clean` for live verification.
@@ -272,7 +272,7 @@ Add deeper systems (quests/factions/loot progression) through existing architect
 - **Done Evidence:**
   - Commit/patch refs: Added event-driven faction standing handler in `src/rpg/application/services/faction_influence_service.py`; wired handler registration into composition roots in `src/rpg/bootstrap.py` and `src/rpg/infrastructure/legacy_cli_compat.py`; added safe publication and standings intent in `src/rpg/application/services/game_service.py`.
   - Domain event coverage summary: `MonsterSlain` events now update faction reputation/influence through `EventBus` subscriptions (no presentation-layer logic).
-  - Tests run + output summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_faction_influence.py tests/unit/test_event_bus_progression.py tests/test_game_logic.py -q` → `11 passed`.
+  - Tests run + output summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_faction_influence.py tests/unit/test_event_bus_progression.py tests/test_game_logic.py -q` → `11 passed`.
 
 #### `P4-T02` Quest Hook Framework (Minimal)
 - **Status:** `Done`
@@ -282,7 +282,7 @@ Add deeper systems (quests/factions/loot progression) through existing architect
 - **Done Evidence:**
   - Commit/patch refs: Added quest hook service `src/rpg/application/services/quest_service.py` (subscribed to `TickAdvanced` + `MonsterSlain`); wired handlers in `src/rpg/bootstrap.py` and `src/rpg/infrastructure/legacy_cli_compat.py`.
   - E2E scenario summary: `first_hunt` quest now triggers on world progression tick, tracks progress on monster slain events, marks completion, and awards XP/money to the slayer.
-  - Tests run + output summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_quest_service.py tests/unit/test_faction_influence.py tests/unit/test_event_bus_progression.py tests/test_game_logic.py -q` → `12 passed`.
+  - Tests run + output summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_quest_service.py tests/unit/test_faction_influence.py tests/unit/test_event_bus_progression.py tests/test_game_logic.py -q` → `12 passed`.
 
 #### `P4-T03` Loot and Reward Pipeline
 - **Status:** `Done`
@@ -291,7 +291,7 @@ Add deeper systems (quests/factions/loot progression) through existing architect
   - Rewards pass through app service contract and persistence.
 - **Done Evidence:**
   - Commit/patch refs: Added application reward contract `RewardOutcomeView` in `src/rpg/application/dtos.py`; routed encounter rewards through `GameService.apply_encounter_reward_intent` in `src/rpg/application/services/game_service.py` with persistence-backed updates.
-  - Unit + integration coverage summary: Added reward pipeline assertions in `tests/test_game_logic.py` (reward view payload, money/xp persistence, inventory reward item); validated with `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_quest_service.py tests/unit/test_faction_influence.py tests/unit/test_event_bus_progression.py tests/test_game_logic.py -q` → `13 passed`.
+  - Unit + integration coverage summary: Added reward pipeline assertions in `tests/test_game_logic.py` (reward view payload, money/xp persistence, inventory reward item); validated with `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_quest_service.py tests/unit/test_faction_influence.py tests/unit/test_event_bus_progression.py tests/test_game_logic.py -q` → `13 passed`.
 
 ### Phase 4 Exit Gates
 - [x] New systems exposed via app intents/events only.
@@ -316,7 +316,7 @@ Stabilize class progression, difficulty modes, and economy pacing.
 - **Done Evidence:**
   - Tunables file(s): `src/rpg/application/services/balance_tables.py` (`rest_heal_amount`, monster reward scaling, first-hunt quest tuning constants).
   - Commit/patch refs: `GameService` and `QuestService` formulas migrated to centralized balance helpers (`src/rpg/application/services/game_service.py`, `src/rpg/application/services/quest_service.py`).
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_balance_tables.py tests/unit/test_quest_service.py tests/test_game_logic.py -q` → `10 passed`.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_balance_tables.py tests/unit/test_quest_service.py tests/test_game_logic.py -q` → `10 passed`.
 
 #### `P5-T02` Difficulty Preset Calibration
 - **Status:** `Done`
@@ -326,7 +326,7 @@ Stabilize class progression, difficulty modes, and economy pacing.
 - **Done Evidence:**
   - Calibration test summary: Added `tests/unit/test_difficulty_calibration.py` to verify default difficulty profiles map to centralized calibration values and preserve expected deltas (Story > Standard > Hardcore HP; incoming damage inverse ordering; Hardcore outgoing > Standard).
   - Commit/patch refs: Added centralized preset profile table in `src/rpg/application/services/balance_tables.py`; migrated `CharacterCreationService._default_difficulties` to read from this table.
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_difficulty_calibration.py tests/unit/test_character_factory.py tests/unit/test_balance_tables.py -q` → `6 passed`.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_difficulty_calibration.py tests/unit/test_character_factory.py tests/unit/test_balance_tables.py -q` → `6 passed`.
 
 #### `P5-T03` Progression Curve Validation
 - **Status:** `Done`
@@ -335,7 +335,7 @@ Stabilize class progression, difficulty modes, and economy pacing.
   - No dead progression states in tested paths.
 - **Done Evidence:**
   - Simulation snapshots summary: Added `tests/unit/test_progression_curve.py` to simulate level 1→6 reward accumulation and assert positive per-level gains with mid-game growth over early-game values.
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_difficulty_calibration.py tests/unit/test_progression_curve.py tests/unit/test_balance_tables.py tests/unit/test_character_factory.py -q` → `7 passed`.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_difficulty_calibration.py tests/unit/test_progression_curve.py tests/unit/test_balance_tables.py tests/unit/test_character_factory.py -q` → `7 passed`.
 
 ### Phase 5 Exit Gates
 - [x] Balance constants centralized.
@@ -360,7 +360,7 @@ Harden CLI play session quality while preserving UI-agnostic architecture.
 - **Done Evidence:**
   - Commit/patch refs: Hardened MySQL world state loading/saving in `src/rpg/infrastructure/db/mysql/repos.py` to recover from malformed/non-dict `flags` payloads instead of crashing.
   - E2E save/load report: Added malformed-state recovery integration test `tests/integration/test_mysql_repositories.py::test_load_default_recovers_from_malformed_flags_payload`.
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/integration/test_mysql_repositories.py tests/integration/test_atomic_persistence.py -q` → `5 passed`.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/integration/test_mysql_repositories.py tests/integration/test_atomic_persistence.py -q` → `5 passed`.
 
 #### `P6-T02` Input and Navigation Consistency
 - **Status:** `Done`
@@ -369,7 +369,7 @@ Harden CLI play session quality while preserving UI-agnostic architecture.
   - All actionable menus support same control conventions.
 - **Done Evidence:**
   - UX checklist report: Added shared key normalization in `src/rpg/presentation/menu_controls.py` (`UP/DOWN`, `W/S`, `ENTER`, `Q/ESC`) and applied it in class-detail menu flow (`src/rpg/presentation/character_creation_ui.py`).
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_menu_controls.py tests/unit/test_character_creation_races.py -q` → `7 passed`.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_menu_controls.py tests/unit/test_character_creation_races.py -q` → `7 passed`.
 
 #### `P6-T03` Error UX and Help Surface
 - **Status:** `Done`
@@ -380,7 +380,7 @@ Harden CLI play session quality while preserving UI-agnostic architecture.
   - Commit/patch refs: Improved top-level runtime error UX and help guidance in `src/rpg/__main__.py`; added in-menu help surface in `src/rpg/presentation/main_menu.py`; improved invalid action hinting in `src/rpg/application/services/game_service.py`.
   - Test coverage: Updated `tests/unit/test_main_entry_error_handling.py` to assert help surface output and absence of traceback text for handled errors.
   - Manual smoke notes: Runtime failures now return friendly messaging plus controls/help hints instead of raw traceback output.
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_main_entry_error_handling.py tests/unit/test_menu_controls.py tests/test_game_logic.py -q` → `12 passed`.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_main_entry_error_handling.py tests/unit/test_menu_controls.py tests/test_game_logic.py -q` → `12 passed`.
 
 ### Phase 6 Exit Gates
 - [x] CLI run quality validated by scripted smoke.
@@ -405,7 +405,7 @@ Finalize a stable command/query contract so web/desktop client can plug in clean
 - **Done Evidence:**
   - Contract doc path: `docs/application_contract_v1.md`
   - Commit/patch refs: Added versioned contract artifact `src/rpg/application/contract.py` (commands, queries, DTO names, version).
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_app_contract.py tests/unit/test_main_entry_error_handling.py tests/test_game_logic.py -q` → `12 passed`.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_app_contract.py tests/unit/test_main_entry_error_handling.py tests/test_game_logic.py -q` → `12 passed`.
 
 #### `P7-T02` Contract Compatibility Tests
 - **Status:** `Done`
@@ -414,7 +414,7 @@ Finalize a stable command/query contract so web/desktop client can plug in clean
   - Contract tests fail on breaking changes.
 - **Done Evidence:**
   - Commit/patch refs: Added compatibility guard suite `tests/unit/test_contract_compatibility.py` to pin command/query names and core DTO field sets.
-  - Test run summary: `C:/Users/Favour/Documents/Github/project-moonlight-main/.venv/Scripts/python.exe -m pytest tests/unit/test_app_contract.py tests/unit/test_contract_compatibility.py tests/e2e/test_cli_flow.py -q` → `6 passed`.
+  - Test run summary: `C:/Users/Favour/Documents/Github/Project Fantasy Ver 1/.venv/Scripts/python.exe -m pytest tests/unit/test_app_contract.py tests/unit/test_contract_compatibility.py tests/e2e/test_cli_flow.py -q` → `6 passed`.
 
 ### Phase 7 Exit Gates
 - [x] Contract stable and versioned.

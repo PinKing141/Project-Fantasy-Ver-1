@@ -52,7 +52,7 @@ class SessionQualityHookTests(unittest.TestCase):
 
     def test_main_menu_quit_invokes_session_report_hook(self) -> None:
         service = self._create_inmemory_service()
-        with mock.patch.object(main_menu_module, "arrow_menu", side_effect=[4]), mock.patch.object(
+        with mock.patch.object(main_menu_module, "arrow_menu", side_effect=[5]), mock.patch.object(
             main_menu_module,
             "clear_screen",
             return_value=None,

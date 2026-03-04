@@ -1,5 +1,8 @@
 import random
 import time
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict
 
@@ -26,6 +29,7 @@ except Exception:  # pragma: no cover - optional dependency fallback
 _CONSOLE = Console() if Console is not None else None
 _CREATION_HELP_HINT = "Need guidance? Open the Creation Library."
 _PANEL_BORDER = "cyan"
+_EXPORT_DIR = Path("exports")
 _THEME = {
     "title": "bold yellow",
     "attributes": "bold cyan",
@@ -33,6 +37,16 @@ _THEME = {
     "warning": "bold red",
     "success": "bold green",
     "muted": "white",
+    "dim": "dim",
+}
+
+_ABILITY_STYLE = {
+    "STR": "bold red",
+    "DEX": "bold green",
+    "CON": "bold yellow",
+    "INT": "bold blue",
+    "WIS": "bold magenta",
+    "CHA": "bold cyan",
 }
 
 _RACE_AUTO_LANGUAGES = {
@@ -48,6 +62,18 @@ _RACE_AUTO_LANGUAGES = {
     "tiefling": ["Common", "Infernal"],
     "dragonborn": ["Common", "Draconic"],
     "dark elf": ["Common", "Elvish", "Undercommon"],
+}
+
+_SPELL_META_CACHE: dict[str, dict[str, str]] | None = None
+_SPELL_SCHOOL_EFFECTS: dict[str, str] = {
+    "abjuration": "Protective warding and resistance effects.",
+    "conjuration": "Summons, teleportation, and battlefield placement effects.",
+    "divination": "Information, detection, and foresight effects.",
+    "enchantment": "Mind influence and behavioral control effects.",
+    "evocation": "Direct elemental force and burst damage effects.",
+    "illusion": "Sensory deception and concealment effects.",
+    "necromancy": "Life-force manipulation, debuffs, and mortality effects.",
+    "transmutation": "Physical transformation and utility-altering effects.",
 }
 
 
@@ -70,6 +96,8 @@ class CreationDraft:
     chosen_languages: list[str] = field(default_factory=list)
     chosen_tools: list[str] = field(default_factory=list)
     racial_traits: list[str] = field(default_factory=list)
+    selected_cantrips: list[str] = field(default_factory=list)
+    selected_spells: list[str] = field(default_factory=list)
     progress_steps: list[str] = field(default_factory=list)
     progress_index: int = 0
 
@@ -102,6 +130,141 @@ def _compact_rows(rows: list[str], limit: int = 6) -> str:
     return f"{', '.join(clean[:limit])} (+{hidden} more)"
 
 
+def _safe_file_stem(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(value or "").strip().lower())
+    collapsed = "_".join(part for part in cleaned.split("_") if part)
+    return collapsed[:48] or "character"
+
+
+def _load_spell_meta_index() -> dict[str, dict[str, str]]:
+    global _SPELL_META_CACHE
+    if _SPELL_META_CACHE is not None:
+        return dict(_SPELL_META_CACHE)
+    path = Path(__file__).resolve().parents[3] / "data" / "spells" / "unified_spells.json"
+    index: dict[str, dict[str, str]] = {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        rows = payload.get("spells") if isinstance(payload, dict) else []
+        if not isinstance(rows, list):
+            rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name", "") or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in index:
+                continue
+            level = int(row.get("level_int", 0) or 0)
+            school = str(row.get("school", "") or "").strip().title() or "Unknown"
+            classes = str(row.get("classes", "") or "").strip() or "Unspecified"
+            components = str(row.get("components", "") or "").strip() or "Unspecified"
+            index[key] = {
+                "level": "Cantrip" if level <= 0 else f"Level {level}",
+                "school": school,
+                "classes": classes,
+                "components": components,
+            }
+    except Exception:
+        index = {}
+    _SPELL_META_CACHE = dict(index)
+    return dict(_SPELL_META_CACHE)
+
+
+def _spell_detail_lines(spell_name: str) -> list[str]:
+    key = str(spell_name or "").strip().lower()
+    if not key:
+        return ["No spell selected."]
+    meta = _load_spell_meta_index().get(key)
+    if meta is None:
+        return [
+            f"Name: {spell_name}",
+            "Description: Data not available in local spell index.",
+            "Effects: General magical effect based on class rules.",
+        ]
+    school_key = str(meta.get("school", "") or "").strip().lower()
+    effect = _SPELL_SCHOOL_EFFECTS.get(school_key, "Arcane utility and combat effects based on spell text.")
+    level_label = str(meta.get("level", "Spell") or "Spell")
+    return [
+        f"Description: {level_label} {str(meta.get('school', 'Unknown') or 'Unknown')} spell.",
+        f"Effects: {effect}",
+        f"Classes: {str(meta.get('classes', 'Unspecified') or 'Unspecified')}",
+        f"Components: {str(meta.get('components', 'Unspecified') or 'Unspecified')}",
+    ]
+
+
+def _describe_difficulty_style(name: str) -> tuple[str, str]:
+    raw = str(name or "").strip().lower()
+    if raw in {"hardcore", "nightmare", "deadly"}:
+        return "bold red", "Hardcore pressure enabled: high lethality and scarce forgiveness."
+    if raw in {"story", "easy", "narrative"}:
+        return "bold blue", "Story mode: calmer progression and gentler encounter pressure."
+    return "bold cyan", "Standard mode: balanced pressure and progression pacing."
+
+
+def _build_progression_window_rows(detail, *, current_level: int, window: int = 5) -> list[dict[str, str | int | bool]]:
+    rows = list(getattr(detail, "progression_rows", []) or [])
+    if not rows:
+        return []
+    levels = [int(getattr(row, "level", 0) or 0) for row in rows if int(getattr(row, "level", 0) or 0) > 0]
+    if not levels:
+        return []
+    min_level = min(levels)
+    max_level = max(levels)
+    start = max(min_level, int(current_level))
+    end = min(max_level, start + max(1, int(window)) - 1)
+    if (end - start + 1) < window:
+        start = max(min_level, end - window + 1)
+    output: list[dict[str, str | int | bool]] = []
+    for row in rows:
+        level = int(getattr(row, "level", 0) or 0)
+        if level < start or level > end:
+            continue
+        gains = str(getattr(row, "gains", "") or "").strip() or "—"
+        output.append(
+            {
+                "level": level,
+                "gains": gains,
+                "is_current": level == int(current_level),
+                "is_future": level > int(current_level),
+            }
+        )
+    return output
+
+
+def _extract_first_feature_name(gains_text: str) -> str:
+    parts = [part.strip() for part in str(gains_text or "").split(",") if part.strip()]
+    if not parts:
+        return "Feature"
+    return parts[0]
+
+
+def _feature_inspector_lines(detail, *, level: int, gains_text: str) -> list[str]:
+    feature_name = _extract_first_feature_name(gains_text)
+    school_hint = ""
+    detail_title = str(getattr(detail, "title", "") or "").lower()
+    if "wizard" in detail_title and any(word in feature_name.lower() for word in ["spell", "arcane", "evocation", "tradition"]):
+        school_hint = "Arcane School Synergy"
+    lines = [
+        f"Type: {'Active Choice' if 'choose' in feature_name.lower() else 'Passive Progression'}",
+        f"Unlock Level: {int(level)}",
+        f"Focus: {feature_name}",
+    ]
+    if school_hint:
+        lines.append(f"Theme: {school_hint}")
+    lines.extend(
+        [
+            "",
+            "Inspection notes:",
+            str(gains_text),
+            "",
+            "Tip: press Enter on class selection to confirm this path. This pane previews what stands out at the highlighted level.",
+        ]
+    )
+    return lines
+
+
 def _progress_markup(draft: CreationDraft) -> str:
     steps = [str(row) for row in list(getattr(draft, "progress_steps", []) or []) if str(row).strip()]
     if not steps:
@@ -116,6 +279,45 @@ def _progress_markup(draft: CreationDraft) -> str:
         else:
             nodes.append(f"[{_THEME['muted']}]{label}[/{_THEME['muted']}]")
     return " ❯ ".join(nodes)
+
+
+def _console_dimensions() -> tuple[int, int]:
+    width = 0
+    height = 0
+    try:
+        if _CONSOLE is not None and getattr(_CONSOLE, "size", None) is not None:
+            width = int(getattr(_CONSOLE.size, "width", 0) or 0)
+            height = int(getattr(_CONSOLE.size, "height", 0) or 0)
+    except Exception:
+        width = 0
+        height = 0
+    return width, height
+
+
+def _progress_panel(draft: CreationDraft):
+    line = _progress_markup(draft)
+    if Panel is None:
+        return line or "Character creation in progress..."
+    return Panel(
+        line or "[bold white]Character creation in progress...[/bold white]",
+        border_style="cyan",
+        expand=True,
+    )
+
+
+def _with_top_progress(content, draft: CreationDraft):
+    if Layout is None:
+        return content
+    _, console_height = _console_dimensions()
+    progress_height = max(3, min(5, int(console_height * 0.08))) if console_height > 0 else 4
+    shell = Layout(name="screen_shell")
+    shell.split_column(
+        Layout(name="progress", size=progress_height),
+        Layout(name="body", ratio=1),
+    )
+    shell["progress"].update(_progress_panel(draft))
+    shell["body"].update(content)
+    return shell
 
 
 def _draft_lines(draft: CreationDraft) -> list[str]:
@@ -145,24 +347,28 @@ def _draft_lines(draft: CreationDraft) -> list[str]:
         f"Stats: {ability_line}",
     ]
     checklist = [
-        ("Name", bool(draft.name)),
-        ("Race", bool(draft.race)),
-        ("Class", bool(draft.class_name)),
-        ("Ability scores", bool(draft.ability_scores)),
-        ("Background", bool(draft.background)),
-        ("Difficulty", bool(draft.difficulty)),
-        ("Alignment", bool(draft.alignment)),
-        ("Equipment", bool(draft.equipment)),
+        ("Name", bool(draft.name), draft.name or "Missing"),
+        ("Race", bool(draft.race), race_line if draft.race else "Missing"),
+        ("Class", bool(draft.class_name), draft.class_name or "Missing"),
+        ("Abilities", bool(draft.ability_scores), ability_line if draft.ability_scores else "Missing"),
+        ("Background", bool(draft.background), draft.background or "Missing"),
+        ("Difficulty", bool(draft.difficulty), draft.difficulty or "Missing"),
+        ("Alignment", bool(draft.alignment), draft.alignment or "Missing"),
+        ("Equipment", bool(draft.equipment), draft.equipment or "Missing"),
     ]
-    missing = [label for label, done in checklist if not done]
+    missing = [label for label, done, _ in checklist if not done]
     completion = len(checklist) - len(missing)
     lines.extend(
         [
             "",
             f"[bold cyan]Build completeness[/bold cyan]: {completion}/{len(checklist)}",
-            f"Missing: {', '.join(missing[:3]) + ('…' if len(missing) > 3 else '') if missing else 'None'}",
+            f"Missing: {', '.join(missing) if missing else 'None'}",
         ]
     )
+    for label, done, value in checklist:
+        marker = "✔" if done else "○"
+        marker_style = _THEME["success"] if done else _THEME["warning"]
+        lines.append(f"[{marker_style}]{marker}[/{marker_style}] {label}: {value}")
     if bool(getattr(draft, "show_detailed", False)):
         lines.extend(
             [
@@ -172,6 +378,8 @@ def _draft_lines(draft: CreationDraft) -> list[str]:
                 f"Chosen Languages: {_compact_rows(list(getattr(draft, 'chosen_languages', []) or []), limit=8)}",
                 f"Tools: {_compact_rows(list(getattr(draft, 'chosen_tools', []) or []), limit=8)}",
                 f"Racial Traits: {_compact_rows(list(getattr(draft, 'racial_traits', []) or []), limit=6)}",
+                f"Selected Cantrips: {_compact_rows(list(getattr(draft, 'selected_cantrips', []) or []), limit=6)}",
+                f"Selected Spells: {_compact_rows(list(getattr(draft, 'selected_spells', []) or []), limit=6)}",
             ]
         )
     return lines
@@ -200,11 +408,28 @@ def _creation_split_view(
 ):
     if Panel is None or Columns is None:
         return "\n".join(body_lines)
+    console_width, console_height = _console_dimensions()
+
+    if console_height > 0:
+        context_height = max(7, min(12, int(console_height * 0.24)))
+        progress_height = max(3, min(4, int(console_height * 0.06)))
+    else:
+        context_height = 9
+        progress_height = 3
+
+    def _stabilize_rows(rows: list[str], target_rows: int) -> list[str]:
+        visible = [str(row) for row in list(rows or []) if str(row).strip()]
+        if not visible:
+            visible = ["Hover options to inspect lore and mechanics."]
+        clipped = visible[: max(1, int(target_rows))]
+        if len(clipped) < target_rows:
+            clipped.extend([""] * (target_rows - len(clipped)))
+        return clipped
+
     left_lines = list(body_lines)
     if footer_hint:
         left_lines.append("")
         left_lines.append(f"[yellow]{footer_hint}[/yellow]")
-    left_lines.append("[bold cyan]V[/bold cyan] Toggle draft details")
     left_lines.append("[bold white]Use arrow keys to move, ENTER to select, ESC to go back.[/bold white]")
     left_panel = Panel(
         "\n".join(left_lines),
@@ -213,9 +438,10 @@ def _creation_split_view(
         expand=True,
     )
 
-    context_rows = [str(row) for row in list(context_lines or []) if str(row).strip()]
-    if not context_rows:
-        context_rows = ["Hover options to inspect lore and mechanics."]
+    context_rows = _stabilize_rows(
+        [str(row) for row in list(context_lines or []) if str(row).strip()],
+        max(3, context_height - 2),
+    )
     context_panel = Panel(
         "\n".join(context_rows),
         title=f"[{_THEME['class_race']}]{context_title}[/{_THEME['class_race']}]",
@@ -223,26 +449,28 @@ def _creation_split_view(
         expand=True,
     )
 
-    progress_line = _progress_markup(draft)
     if Layout is not None:
         layout = Layout(name="creation")
-        context_height = max(7, min(16, len(context_rows) + 4))
+
+        if console_width >= 220:
+            menu_ratio, draft_ratio = 13, 10
+        elif console_width >= 180:
+            menu_ratio, draft_ratio = 11, 9
+        elif console_width >= 140:
+            menu_ratio, draft_ratio = 5, 4
+        else:
+            menu_ratio, draft_ratio = 1, 1
+
         layout.split_column(
-            Layout(name="progress", size=3),
-            Layout(name="upper", ratio=3),
+            Layout(name="progress", size=progress_height),
+            Layout(name="upper", ratio=5),
             Layout(name="context", size=context_height),
         )
-        layout["upper"].split_row(Layout(name="menu", ratio=3), Layout(name="draft", ratio=2))
+        layout["upper"].split_row(Layout(name="menu", ratio=menu_ratio), Layout(name="draft", ratio=draft_ratio))
         layout["menu"].update(left_panel)
         layout["draft"].update(_draft_panel(draft))
         layout["context"].update(context_panel)
-        layout["progress"].update(
-            Panel(
-                progress_line or "[bold white]Character creation in progress...[/bold white]",
-                border_style="cyan",
-                expand=True,
-            )
-        )
+        layout["progress"].update(_progress_panel(draft))
         return layout
 
     return Columns([left_panel, _draft_panel(draft)], expand=True, equal=True)
@@ -255,12 +483,13 @@ def _creation_menu(
     *,
     footer_hint: str | None = None,
     context_provider: Callable[[int], tuple[str, list[str]] | None] | None = None,
-    quick_keys: dict[str, int] | None = None,
+    initial_selected: int = 0,
+    status_line: str | None = None,
 ) -> int:
     if _CONSOLE is None or Panel is None or Columns is None or Live is None:
         return arrow_menu(title, options, footer_hint=footer_hint)
 
-    selected = 0
+    selected = max(0, min(len(options) - 1, int(initial_selected)))
     window_size = 10
 
     def _window_bounds() -> tuple[int, int]:
@@ -289,6 +518,8 @@ def _creation_menu(
             rows.append("[dim]↓ more options below[/dim]")
         rows.append("")
         rows.append(f"[dim]Showing {start + 1}-{end} of {len(options)}[/dim]")
+        if status_line:
+            rows.append(f"[bold cyan]{status_line}[/bold cyan]")
         return rows
 
     def _context_payload() -> tuple[str, list[str]]:
@@ -311,21 +542,16 @@ def _creation_menu(
             context_lines=context_lines,
         )
 
-    clear_screen()
     with Live(
         _render_view(),
         console=_CONSOLE,
-        refresh_per_second=24,
+        refresh_per_second=12,
         transient=True,
+        screen=True,
     ) as live:
         while True:
             raw_key = read_key()
             key = normalize_menu_key(raw_key)
-            raw = str(raw_key or "").strip().lower()
-            if raw == "v":
-                draft.show_detailed = not bool(getattr(draft, "show_detailed", False))
-                live.update(_render_view(), refresh=True)
-                continue
             if key == "UP":
                 selected = (selected - 1) % len(options)
                 live.update(_render_view(), refresh=True)
@@ -334,10 +560,6 @@ def _creation_menu(
                 selected = (selected + 1) % len(options)
                 live.update(_render_view(), refresh=True)
                 continue
-            if quick_keys and raw in quick_keys:
-                mapped = int(quick_keys.get(raw, -1))
-                if 0 <= mapped < len(options):
-                    return mapped
             if key == "ENTER":
                 return selected
             if key == "ESC":
@@ -356,18 +578,57 @@ def _prompt_enter(message: str = "Press ENTER to continue...") -> None:
 def _prompt_custom_name(draft: CreationDraft | None = None) -> str:
     clear_screen()
     if _CONSOLE is not None and Panel is not None and Columns is not None and draft is not None:
-        left = Panel.fit(
+        console_width, console_height = _console_dimensions()
+        if console_width >= 220:
+            menu_ratio, draft_ratio = 13, 10
+        elif console_width >= 180:
+            menu_ratio, draft_ratio = 11, 9
+        elif console_width >= 140:
+            menu_ratio, draft_ratio = 5, 4
+        else:
+            menu_ratio, draft_ratio = 1, 1
+
+        prompt_panel = Panel(
             "\n".join(
                 [
                     "Enter your character's name (max 20 chars, leave blank for generated).",
-                    "Type [bold]help[/bold] to open the creation help library.",
+                    "",
                     "Type [bold]esc[/bold] to go back.",
+                    "",
+                    "[dim]Tip: a short memorable name reads best in the adventure log.[/dim]",
                 ]
             ),
             title="[bold yellow]Character Creation[/bold yellow]",
             border_style=_PANEL_BORDER,
+            expand=True,
         )
-        _CONSOLE.print(Columns([left, _draft_panel(draft)], expand=True, equal=True))
+        context_panel = Panel(
+            "\n".join(
+                [
+                    "[bold cyan]Name Guidance[/bold cyan]",
+                    "- Keep it readable at a glance.",
+                    "- 2–3 syllables is usually easy to remember.",
+                    "- Leave blank if you want the generator to decide.",
+                ]
+            ),
+            title="[bold magenta]Context[/bold magenta]",
+            border_style="magenta",
+            expand=True,
+        )
+
+        if Layout is not None:
+            shell = Layout(name="name_prompt")
+            shell.split_row(Layout(name="menu", ratio=menu_ratio), Layout(name="draft", ratio=draft_ratio))
+            if console_height > 0 and console_height < 36:
+                shell["menu"].split_column(Layout(name="prompt", ratio=2), Layout(name="context", ratio=1))
+            else:
+                shell["menu"].split_column(Layout(name="prompt", ratio=3), Layout(name="context", ratio=2))
+            shell["prompt"].update(prompt_panel)
+            shell["context"].update(context_panel)
+            shell["draft"].update(_draft_panel(draft))
+            _CONSOLE.print(_with_top_progress(shell, draft))
+        else:
+            _CONSOLE.print(Columns([prompt_panel, _draft_panel(draft)], expand=True, equal=False))
         return _CONSOLE.input("[bold yellow]>>> [/bold yellow]")
 
     if _CONSOLE is not None and Panel is not None:
@@ -376,7 +637,6 @@ def _prompt_custom_name(draft: CreationDraft | None = None) -> str:
                 "\n".join(
                     [
                         "Enter your character's name (max 20 chars, leave blank for generated).",
-                        "Type [bold]help[/bold] to open the creation help library.",
                         "Type [bold]esc[/bold] to go back.",
                     ]
                 ),
@@ -391,7 +651,6 @@ def _prompt_custom_name(draft: CreationDraft | None = None) -> str:
     print("=" * 40)
     print("")
     print("Enter your character's name (max 20 chars, leave blank for generated):")
-    print("Type 'help' to open the creation help library.")
     print("Type 'esc' to go back.")
     print(">>> ", end="")
     return input()
@@ -429,8 +688,7 @@ def _choose_name(creation_service, draft: CreationDraft):
             "Character Creation",
             options,
             draft,
-            footer_hint="ESC to return to main menu. Press [bold cyan]R[/bold cyan] to reroll generated name.",
-            quick_keys={"r": 2},
+            footer_hint="ESC to return to main menu.",
         )
         if idx < 0 or idx == 4:
             return False, ""
@@ -447,9 +705,6 @@ def _choose_name(creation_service, draft: CreationDraft):
 
         raw_name = _prompt_custom_name(draft)
         lowered = (raw_name or "").strip().lower()
-        if lowered in {"help", "?"}:
-            _show_creation_reference_library(creation_service)
-            continue
         if lowered in {"esc", "cancel", "q", "quit"}:
             continue
         return True, raw_name
@@ -594,51 +849,126 @@ def _show_class_detail(creation_service, chosen_class, draft: CreationDraft) -> 
 
     while True:
         clear_screen()
-        if _CONSOLE is not None and Panel is not None and Columns is not None:
-            lines = [
-                detail.description,
-                "",
-                f"[{_THEME['attributes']}]Primary Ability[/{_THEME['attributes']}] : {detail.primary_ability}",
-                f"[{_THEME['attributes']}]Hit Die[/{_THEME['attributes']}]         : {detail.hit_die}",
-                f"Combat Profile  : {detail.combat_profile_line}",
-            ]
+        progression_window = _build_progression_window_rows(detail, current_level=1, window=5)
+        inspector_row = progression_window[min(len(progression_window) - 1, max(0, selected - 1))] if progression_window else None
+
+        if _CONSOLE is not None and Panel is not None and Columns is not None and Table is not None:
+            lore_panel = Panel(
+                str(detail.description or "Adventurer ready for the unknown."),
+                title="[italic bright_black]Class Lore[/italic bright_black]",
+                border_style="blue",
+                expand=True,
+            )
+
+            mechanics_table = Table(show_header=False, box=None, expand=True)
+            mechanics_table.add_column(width=18)
+            mechanics_table.add_column()
+            mechanics_table.add_row("Primary Ability", str(detail.primary_ability or "—"))
+            mechanics_table.add_row("Hit Die", str(detail.hit_die or "—"))
+            mechanics_table.add_row("Combat Profile", str(detail.combat_profile_line or "—"))
             if detail.recommended_line:
-                lines.append(f"Recommended     : {detail.recommended_line}")
-            progression_rows = list(getattr(detail, "progression_rows", []) or [])
-            if progression_rows:
-                lines.append("")
-                lines.append(f"[{_THEME['attributes']}]Class Progression (1–20)[/{_THEME['attributes']}]")
-                lines.append("Level | Gains")
-                lines.append("------|------------------------------------------------")
-                for row in progression_rows:
-                    gains = str(getattr(row, "gains", "") or "").strip() or "—"
-                    level = int(getattr(row, "level", 0) or 0)
-                    lines.append(f"{level:>5} | {gains}")
-            lines.append("")
+                mechanics_table.add_row("Recommended", str(detail.recommended_line))
+            mechanics_panel = Panel(mechanics_table, title="[bold cyan]Core Mechanics[/bold cyan]", border_style="cyan", expand=True)
+
+            progression_panel = None
+            if progression_window:
+                table = Table(show_header=True, header_style="bold white", expand=True)
+                table.add_column("Lvl", justify="right", width=5)
+                table.add_column("Features", overflow="fold")
+                for row in progression_window:
+                    level = int(row["level"])
+                    gains = str(row["gains"])
+                    marker = "▶" if bool(row["is_current"]) else " "
+                    gains_style = "bold white" if bool(row["is_current"]) else (_THEME["dim"] if bool(row["is_future"]) else "white")
+                    table.add_row(f"{marker} {level}", f"[{gains_style}]{gains}[/{gains_style}]")
+                progression_panel = Panel(
+                    table,
+                    title="[bold yellow]Progression Focus (Lv 1–5)[/bold yellow]",
+                    border_style="cyan",
+                )
+
+            inspector_lines = _feature_inspector_lines(
+                detail,
+                level=int(inspector_row["level"]) if inspector_row else 1,
+                gains_text=str(inspector_row["gains"]) if inspector_row else "No progression data available.",
+            )
+            inspector_panel = Panel(
+                "\n".join(inspector_lines),
+                title="[bold magenta]Feature Inspector[/bold magenta]",
+                border_style="magenta",
+            )
+
+            option_lines: list[str] = []
             for idx, opt in enumerate(options):
                 if idx == selected:
-                    lines.append(f"[bold black on bright_cyan] ▶ {opt} [/bold black on bright_cyan]")
+                    option_lines.append(f"[bold black on bright_cyan] ▶ {opt} [/bold black on bright_cyan]")
                 else:
-                    lines.append(f"[white]  {opt}[/white]")
-            lines.append("")
-            lines.append(f"[yellow]{_CREATION_HELP_HINT}[/yellow]")
-            lines.append("[bold white]Use arrow keys to move, ENTER to select, ESC to cancel.[/bold white]")
-            _CONSOLE.print(
-                Columns(
-                    [
-                        Panel.fit(
-                            "\n".join(lines),
-                            title=f"[{_THEME['class_race']}]{detail.title}[/{_THEME['class_race']}]",
-                            border_style=_PANEL_BORDER,
-                            subtitle="[bold white]↑/↓ Navigate • Enter Confirm • Esc Back[/bold white]",
-                            subtitle_align="left",
-                        ),
-                        _draft_panel(draft),
-                    ],
+                    option_lines.append(f"[white]  {opt}[/white]")
+            option_lines.append("")
+            option_lines.append("[bold white]Use arrow keys to move, ENTER to select, ESC to cancel.[/bold white]")
+            options_panel = Panel("\n".join(option_lines), title="[bold cyan]Selection[/bold cyan]", border_style="cyan", expand=True)
+
+            if Layout is not None:
+                console_width, console_height = _console_dimensions()
+                if console_width >= 220:
+                    content_ratio, draft_ratio = 13, 10
+                elif console_width >= 180:
+                    content_ratio, draft_ratio = 11, 9
+                elif console_width >= 140:
+                    content_ratio, draft_ratio = 5, 4
+                else:
+                    content_ratio, draft_ratio = 1, 1
+
+                lore_size = 3
+                mechanics_size = 4
+                options_size = 4
+                progression_ratio = 3
+                inspector_ratio = 3
+                if console_height > 0 and console_height < 38:
+                    lore_size = 2
+                    mechanics_size = 3
+                    options_size = 3
+                    progression_ratio = 2
+                    inspector_ratio = 2
+
+                left_column = Layout(name="class_left")
+                if progression_panel is not None:
+                    left_column.split_column(
+                        Layout(name="lore", size=lore_size),
+                        Layout(name="mechanics", size=mechanics_size),
+                        Layout(name="progression", ratio=progression_ratio),
+                        Layout(name="inspector", ratio=inspector_ratio),
+                        Layout(name="options", size=options_size),
+                    )
+                    left_column["progression"].update(progression_panel)
+                else:
+                    left_column.split_column(
+                        Layout(name="lore", size=lore_size),
+                        Layout(name="mechanics", size=mechanics_size),
+                        Layout(name="inspector", ratio=max(2, inspector_ratio)),
+                        Layout(name="options", size=options_size),
+                    )
+                left_column["lore"].update(lore_panel)
+                left_column["mechanics"].update(mechanics_panel)
+                left_column["inspector"].update(inspector_panel)
+                left_column["options"].update(options_panel)
+
+                left_shell = Panel(
+                    left_column,
+                    title=f"[{_THEME['class_race']}]{detail.title}[/{_THEME['class_race']}]",
+                    border_style=_PANEL_BORDER,
+                    subtitle="[bold white]↑/↓ Navigate • Enter Confirm • Esc Back[/bold white]",
+                    subtitle_align="left",
                     expand=True,
-                    equal=True,
                 )
-            )
+
+                root = Layout(name="class_root")
+                root.split_row(Layout(name="content", ratio=content_ratio), Layout(name="draft", ratio=draft_ratio))
+                root["content"].update(left_shell)
+                root["draft"].update(_draft_panel(draft))
+                _CONSOLE.print(_with_top_progress(root, draft))
+            else:
+                _CONSOLE.print(Columns([lore_panel, mechanics_panel, inspector_panel, options_panel], expand=True, equal=False))
         else:
             print("=" * 40)
             print(f"{detail.title:^40}")
@@ -650,22 +980,18 @@ def _show_class_detail(creation_service, chosen_class, draft: CreationDraft) -> 
             print(f"Combat Profile  : {detail.combat_profile_line}")
             if detail.recommended_line:
                 print(f"Recommended     : {detail.recommended_line}")
-            progression_rows = list(getattr(detail, "progression_rows", []) or [])
-            if progression_rows:
+            if progression_window:
                 print("")
-                print("Class Progression (1–20)")
-                print("Level | Gains")
-                print("------|------------------------------------------------")
-                for row in progression_rows:
-                    gains = str(getattr(row, "gains", "") or "").strip() or "—"
-                    level = int(getattr(row, "level", 0) or 0)
-                    print(f"{level:>5} | {gains}")
+                print("Progression Focus (Lv 1-5)")
+                print("Lvl | Gains")
+                print("----|------------------------------------------------")
+                for row in progression_window:
+                    marker = ">" if bool(row["is_current"]) else " "
+                    print(f"{marker}{int(row['level']):>3} | {str(row['gains'])}")
             print("")
             for idx, opt in enumerate(options):
                 prefix = "> " if idx == selected else "  "
                 print(f"{prefix}{opt}")
-            print("")
-            print(_CREATION_HELP_HINT)
             print("-" * 40)
             print("Use arrow keys to move, ENTER to select, ESC to cancel.")
             print("-" * 40)
@@ -860,8 +1186,11 @@ def _choose_difficulty(creation_service, draft: CreationDraft):
             lines.append(f"Legacy labels kept visible: {', '.join(legacy_labels)}")
         if guardrail_warning:
             lines.append(guardrail_warning)
+        diff_name = str(getattr(row, "name", "Difficulty") or "Difficulty")
+        diff_style, diff_note = _describe_difficulty_style(diff_name)
+        lines.append(f"[{diff_style}]{diff_note}[/{diff_style}]")
         return (
-            str(getattr(row, "name", "Difficulty") or "Difficulty"),
+            f"[{diff_style}]{diff_name}[/{diff_style}]",
             lines,
         )
 
@@ -979,8 +1308,9 @@ def _point_buy_prompt(
         if Panel is None or Columns is None:
             return "\n".join([title, "", *left_lines, "", *right_lines, "", footer])
 
-        left_panel = Panel.fit("\n".join(left_lines), title=f"[bold cyan]{left_title}[/bold cyan]", border_style="cyan")
-        right_panel = Panel.fit("\n".join(right_lines), title=f"[bold cyan]{right_title}[/bold cyan]", border_style="cyan")
+        border = "bright_red" if warning_ticks > 0 else "cyan"
+        left_panel = Panel.fit("\n".join(left_lines), title=f"[bold cyan]{left_title}[/bold cyan]", border_style=border)
+        right_panel = Panel.fit("\n".join(right_lines), title=f"[bold cyan]{right_title}[/bold cyan]", border_style=border)
 
         if Layout is not None:
             layout = Layout(name="ability_dashboard")
@@ -1003,19 +1333,26 @@ def _point_buy_prompt(
         scores = {ability: 8 for ability in ABILITY_ORDER}
 
     selected = 0
+    warning_text = ""
+    warning_ticks = 0
 
-    def _shift_score(index: int, delta: int) -> None:
-        nonlocal scores
+    def _shift_score(index: int, delta: int) -> bool:
+        nonlocal scores, warning_text, warning_ticks
         ability = ABILITY_ORDER[index]
         proposed = int(scores.get(ability, 8) or 8) + int(delta)
         if proposed < 8 or proposed > 15:
-            return
+            warning_text = "[ ! ] Score must stay between 8 and 15."
+            warning_ticks = 2
+            return False
         candidate = dict(scores)
         candidate[ability] = proposed
         try:
             scores = creation_service.validate_point_buy(candidate, pool=27)
         except ValueError:
-            return
+            warning_text = "[ ! ] Insufficient points for that increase."
+            warning_ticks = 2
+            return False
+        return True
 
     def _ability_mod(score: int) -> int:
         return (int(score) - 10) // 2
@@ -1023,6 +1360,7 @@ def _point_buy_prompt(
     def _render_point_buy_view():
         spent = int(creation_service.point_buy_cost(scores) or 0)
         remaining = max(0, 27 - spent)
+        pulse = "[bold cyan]" if warning_ticks <= 0 else "[bold red]"
 
         left_lines: list[str] = []
         for idx, ability in enumerate(ABILITY_ORDER):
@@ -1032,15 +1370,19 @@ def _point_buy_prompt(
             marker = "▶" if idx == selected else " "
             style = "bold black on bright_cyan" if idx == selected else "white"
             label = ability_labels.get(ability, ability)
-            left_lines.append(f"[{style}]{marker} {label:<12}: {value:>2} ({mod_text:>3})[/{style}]")
+            ability_style = _ABILITY_STYLE.get(ability, "bold white")
+            left_lines.append(f"[{style}]{marker} [{ability_style}]{label:<12}[/{ability_style}]: {value:>2} ({mod_text:>3})[/{style}]")
 
         right_lines = [
-            f"Remaining: [bold cyan]{remaining:02d}[/bold cyan] / 27",
+            f"Remaining: {pulse}{remaining:02d}[/] / 27",
             "",
             "Cost to increase:",
             "8 to 13 costs 1 point each.",
             "14 and 15 cost 2 points each.",
         ]
+
+        if warning_ticks > 0:
+            right_lines.extend(["", f"[bold red]{warning_text}[/bold red]"])
 
         return _dashboard(
             "ABILITY SCORE GENERATION (Point Buy)",
@@ -1069,12 +1411,10 @@ def _point_buy_prompt(
                     changed = True
                 elif key == "LEFT":
                     before = dict(scores)
-                    _shift_score(selected, -1)
-                    changed = before != scores
+                    changed = _shift_score(selected, -1) or before != scores
                 elif key == "RIGHT":
                     before = dict(scores)
-                    _shift_score(selected, 1)
-                    changed = before != scores
+                    changed = _shift_score(selected, 1) or before != scores
                 elif key == "ENTER":
                     return creation_service.validate_point_buy(dict(scores), pool=27)
                 elif key == "ESC":
@@ -1086,6 +1426,9 @@ def _point_buy_prompt(
                     _show_creation_reference_library(creation_service)
                     changed = True
 
+                if warning_ticks > 0 and not changed:
+                    warning_ticks = max(0, warning_ticks - 1)
+                    changed = True
                 if changed:
                     live.update(_render_point_buy_view(), refresh=True)
         return None
@@ -1285,9 +1628,9 @@ def _roll_assign_prompt(creation_service, chosen_class, draft: CreationDraft) ->
     if _CONSOLE is not None and Panel is not None and Columns is not None and Live is not None:
         clear_screen()
         fast_forward_remaining = False
-        with Live(_render_assign_view(), console=_CONSOLE, refresh_per_second=24, transient=True) as live:
+        with Live(_render_assign_view(), console=_CONSOLE, refresh_per_second=12, transient=True) as live:
             for roll_index in range(6):
-                for frame_idx in range(8):
+                for frame_idx in range(5):
                     rolling_preview = [roll_rng.randint(1, 6) for _ in range(4)]
                     spinner = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
                     rolling_trail.append(
@@ -1298,7 +1641,7 @@ def _roll_assign_prompt(creation_service, chosen_class, draft: CreationDraft) ->
                         rolling_trail = rolling_trail[-240:]
                     frame_counter += 1
                     live.update(_render_assign_view(), refresh=True)
-                    time.sleep(0.04)
+                    time.sleep(0.06)
 
                 final_dice = [roll_rng.randint(1, 6) for _ in range(4)]
                 total = int(sum(final_dice) - min(final_dice))
@@ -1471,6 +1814,8 @@ def _select_spells_from_pool(
     if target_count <= 0:
         return []
     selected: list[str] = []
+    cursor_index = 0
+    status_line = f"Select {target_count} spell(s)."
 
     while True:
         labels: list[str] = []
@@ -1479,24 +1824,60 @@ def _select_spells_from_pool(
             labels.append(f"{marker} {spell_name}")
         labels.extend([
             f"Confirm Selection ({len(selected)}/{target_count})",
+            "Back",
             "Help: Creation Reference Library",
         ])
-        pick = _creation_menu(title, labels, draft, footer_hint=footer_hint)
+        confirm_index = len(labels) - 3
+        back_index = len(labels) - 2
+        help_index = len(labels) - 1
+
+        def _context_for(index: int) -> tuple[str, list[str]]:
+            if index >= len(pool):
+                if index == help_index:
+                    return "Creation Library", ["Open spell references and examples."]
+                if index == back_index:
+                    return "Back", ["Return to previous step without applying this spell selection."]
+                return "Selection", [f"Selected {len(selected)} of {target_count} required spells."]
+            spell_name = str(pool[index])
+            selected_mark = "Selected" if spell_name in selected else "Not selected"
+            return (spell_name, [f"Status: {selected_mark}", *_spell_detail_lines(spell_name)])
+
+        pick = _creation_menu(
+            title,
+            labels,
+            draft,
+            footer_hint=footer_hint,
+            context_provider=_context_for,
+            initial_selected=cursor_index,
+            status_line=status_line,
+        )
         if pick < 0:
             return None
-        if pick == len(labels) - 1:
+        cursor_index = int(max(0, min(len(labels) - 1, pick)))
+        if pick == help_index:
             _show_creation_reference_library(creation_service)
+            status_line = "Returned from reference library."
             continue
-        if pick == len(labels) - 2:
+        if pick == back_index:
+            return None
+        if pick == confirm_index:
             if len(selected) >= target_count:
                 return selected[:target_count]
+            status_line = f"Need {target_count - len(selected)} more selection(s) before confirming."
             continue
 
         chosen_spell = pool[pick]
         if chosen_spell in selected:
             selected = [row for row in selected if row != chosen_spell]
+            status_line = f"Deselected: {chosen_spell}"
         elif len(selected) < target_count:
             selected.append(chosen_spell)
+            status_line = f"Selected: {chosen_spell}"
+            if len(selected) >= target_count:
+                cursor_index = confirm_index
+                status_line = f"Selected: {chosen_spell}. Ready to confirm."
+        else:
+            status_line = f"Selection limit reached ({target_count}). Deselect one to change."
 
 
 def _select_multi_from_pool(
@@ -1510,6 +1891,8 @@ def _select_multi_from_pool(
     if target_count <= 0:
         return []
     selected: list[str] = []
+    cursor_index = 0
+    status_line = f"Select {target_count} option(s)."
     while True:
         options = []
         for row in pool:
@@ -1519,18 +1902,47 @@ def _select_multi_from_pool(
             f"Confirm Selection ({len(selected)}/{target_count})",
             "Back",
         ])
-        choice = _creation_menu(title, options, draft, footer_hint=footer_hint)
+
+        def _context_for(index: int) -> tuple[str, list[str]]:
+            if index >= len(pool):
+                if index == len(options) - 1:
+                    return "Back", ["Return to previous step without applying this choice set."]
+                return "Selection", [f"Selected {len(selected)} of {target_count} required choices."]
+            option_name = str(pool[index])
+            return (
+                option_name,
+                [
+                    f"Status: {'Selected' if option_name in selected else 'Not selected'}",
+                    "Toggle this option with ENTER.",
+                ],
+            )
+
+        choice = _creation_menu(
+            title,
+            options,
+            draft,
+            footer_hint=footer_hint,
+            context_provider=_context_for,
+            initial_selected=cursor_index,
+            status_line=status_line,
+        )
         if choice in {-1, len(options) - 1}:
             return None
+        cursor_index = int(max(0, min(len(options) - 1, choice)))
         if choice == len(options) - 2:
             if len(selected) >= target_count:
                 return selected[:target_count]
+            status_line = f"Need {target_count - len(selected)} more selection(s) before confirming."
             continue
         picked = pool[choice]
         if picked in selected:
             selected = [row for row in selected if row != picked]
+            status_line = f"Deselected: {picked}"
         elif len(selected) < target_count:
             selected.append(picked)
+            status_line = f"Selected: {picked}"
+        else:
+            status_line = f"Selection limit reached ({target_count}). Deselect one to change."
 
 
 def _prompt_profile_value(title: str, prompt: str, draft: CreationDraft, default_value: str = "") -> str | None:
@@ -1863,6 +2275,83 @@ def _run_creation_skill_training_flow(game_service, character_id: int) -> None:
         _prompt_enter()
 
 
+def _resolve_class_index_by_name(creation_service, class_name: str) -> int:
+    class_rows = list(creation_service.list_classes() or [])
+    target = str(class_name or "").strip().lower()
+    for idx, row in enumerate(class_rows):
+        if str(getattr(row, "name", "") or "").strip().lower() == target:
+            return int(idx)
+    return 0
+
+
+def _write_character_export(payload: dict[str, object]) -> Path:
+    _EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    name_token = _safe_file_stem(str(payload.get("name", "character") or "character"))
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    export_path = _EXPORT_DIR / f"character_{name_token}_{stamp}.json"
+    export_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return export_path
+
+
+def create_character_from_export_payload(game_service, payload: dict[str, object]) -> int | None:
+    creation_service = game_service.character_creation_service
+    if creation_service is None:
+        return None
+
+    races = list(creation_service.list_races() or [])
+    backgrounds = list(creation_service.list_backgrounds() or [])
+    difficulties = list(creation_service.list_difficulties() or [])
+
+    race_name = str(payload.get("race", "") or "")
+    subrace_name = str(payload.get("subrace", "") or "")
+    background_name = str(payload.get("background", "") or "")
+    difficulty_name = str(payload.get("difficulty", "") or "")
+
+    race = next((row for row in races if str(getattr(row, "name", "") or "").strip().lower() == race_name.strip().lower()), None)
+    subrace = None
+    if race is not None and subrace_name:
+        subrows = list(creation_service.list_subraces_for_race(race=race) or [])
+        subrace = next((row for row in subrows if str(getattr(row, "name", "") or "").strip().lower() == subrace_name.strip().lower()), None)
+    background = next((row for row in backgrounds if str(getattr(row, "name", "") or "").strip().lower() == background_name.strip().lower()), None)
+    difficulty = next((row for row in difficulties if str(getattr(row, "name", "") or "").strip().lower() == difficulty_name.strip().lower()), None)
+
+    class_index = _resolve_class_index_by_name(creation_service, str(payload.get("class_name", "") or ""))
+    ability_scores = {
+        str(key): int(value)
+        for key, value in dict(payload.get("ability_scores", {}) or {}).items()
+        if str(key).strip() in ABILITY_ORDER
+    }
+    if len(ability_scores) != len(ABILITY_ORDER):
+        class_rows = list(creation_service.list_classes() or [])
+        chosen = class_rows[class_index] if class_rows else None
+        ability_scores = creation_service.standard_array_for_class(chosen)
+
+    character = creation_service.create_character(
+        name=str(payload.get("name", "") or ""),
+        class_index=class_index,
+        ability_scores=ability_scores,
+        race=race,
+        subrace=subrace,
+        background=background,
+        difficulty=difficulty,
+        subclass_slug=str(payload.get("subclass_slug", "") or "") or None,
+        alignment=str(payload.get("alignment", "") or "") or None,
+        starting_equipment_override=[str(row) for row in list(payload.get("starting_equipment_override", []) or []) if str(row).strip()] or None,
+        starting_gold_bonus=int(payload.get("starting_gold_bonus", 0) or 0),
+        selected_cantrips=[str(row) for row in list(payload.get("selected_cantrips", []) or []) if str(row).strip()] or None,
+        selected_known_spells=[str(row) for row in list(payload.get("selected_known_spells", []) or []) if str(row).strip()] or None,
+        selected_tool_proficiencies=[str(row) for row in list(payload.get("selected_tool_proficiencies", []) or []) if str(row).strip()] or None,
+        selected_languages=[str(row) for row in list(payload.get("selected_languages", []) or []) if str(row).strip()] or None,
+        personality_profile=dict(payload.get("personality_profile", {}) or {}) or None,
+        class_feature_choices=dict(payload.get("class_feature_choices", {}) or {}) or None,
+        selected_feat_slug=str(payload.get("selected_feat_slug", "") or "") or None,
+        generated_name_gender=str(payload.get("generated_name_gender", "") or "") or None,
+    )
+
+    summary = game_service.build_character_creation_summary(character)
+    return int(getattr(summary, "character_id", 0) or getattr(character, "id", 0) or 0)
+
+
 def run_character_creation(game_service):
     creation_service = game_service.character_creation_service
     if creation_service is None:
@@ -1950,6 +2439,8 @@ def run_character_creation(game_service):
 
         draft.chosen_languages = [str(row) for row in list(selected_languages or []) if str(row).strip()]
         draft.chosen_tools = [str(row) for row in list(selected_tool_proficiencies or []) if str(row).strip()]
+        draft.selected_cantrips = [str(row) for row in list(selected_cantrips or []) if str(row).strip()]
+        draft.selected_spells = [str(row) for row in list(selected_known_spells or []) if str(row).strip()]
 
     while 0 <= current_step < len(state_keys):
         key = state_keys[current_step]
@@ -2000,37 +2491,44 @@ def run_character_creation(game_service):
             continue
 
         if key == "class":
-            options = creation_service.list_class_names() + ["Help: Creation Reference Library"]
+            if len(classes) == 1:
+                chosen = classes[0]
+                if not _show_class_detail(creation_service, chosen, draft):
+                    current_step -= 1
+                    continue
+                idx = 0
+            else:
+                options = creation_service.list_class_names() + ["Help: Creation Reference Library"]
 
-            def _context_for(index: int) -> tuple[str, list[str]]:
-                if index >= len(classes):
-                    return "Creation Library", ["Open the reference library to compare classes."]
-                row = classes[index]
-                return (
-                    str(getattr(row, "name", "Class") or "Class"),
-                    [
-                        f"[{_THEME['attributes']}]Primary Ability[/{_THEME['attributes']}]: {str(getattr(row, 'primary_ability', '—') or '—').title()}",
-                        f"[{_THEME['attributes']}]Hit Die[/{_THEME['attributes']}]: {str(getattr(row, 'hit_die', 'd8') or 'd8')}",
-                        f"Recommended: {creation_service.format_attribute_line(getattr(row, 'base_attributes', {}) or {})}",
-                    ],
+                def _context_for(index: int) -> tuple[str, list[str]]:
+                    if index >= len(classes):
+                        return "Creation Library", ["Open the reference library to compare classes."]
+                    row = classes[index]
+                    return (
+                        str(getattr(row, "name", "Class") or "Class"),
+                        [
+                            f"[{_THEME['attributes']}]Primary Ability[/{_THEME['attributes']}]: {str(getattr(row, 'primary_ability', '—') or '—').title()}",
+                            f"[{_THEME['attributes']}]Hit Die[/{_THEME['attributes']}]: {str(getattr(row, 'hit_die', 'd8') or 'd8')}",
+                            f"Recommended: {creation_service.format_attribute_line(getattr(row, 'base_attributes', {}) or {})}",
+                        ],
+                    )
+
+                idx = _creation_menu(
+                    "Choose Your Class",
+                    options,
+                    draft,
+                    footer_hint=_CREATION_HELP_HINT,
+                    context_provider=_context_for,
                 )
-
-            idx = _creation_menu(
-                "Choose Your Class",
-                options,
-                draft,
-                footer_hint=_CREATION_HELP_HINT,
-                context_provider=_context_for,
-            )
-            if idx < 0:
-                current_step -= 1
-                continue
-            if idx == len(options) - 1:
-                _show_creation_reference_library(creation_service)
-                continue
-            chosen = classes[idx]
-            if not _show_class_detail(creation_service, chosen, draft):
-                continue
+                if idx < 0:
+                    current_step -= 1
+                    continue
+                if idx == len(options) - 1:
+                    _show_creation_reference_library(creation_service)
+                    continue
+                chosen = classes[idx]
+                if not _show_class_detail(creation_service, chosen, draft):
+                    continue
             chosen_class = chosen
             chosen_class_index = idx
             selected_subclass_slug = None
@@ -2051,7 +2549,8 @@ def run_character_creation(game_service):
             continue
 
         if key == "subclass":
-            unlock_level = int(creation_service.subclass_selection_level_for_class(getattr(chosen_class, "slug", "") or "") or 3)
+            selection_level_fn = getattr(creation_service, "subclass_selection_level_for_class", None)
+            unlock_level = int(selection_level_fn(getattr(chosen_class, "slug", "") or "") or 3) if callable(selection_level_fn) else 3
             if unlock_level > 1:
                 selected_subclass_slug = None
                 draft.subclass_name = f"Unlocks at level {unlock_level}"
@@ -2218,6 +2717,41 @@ def run_character_creation(game_service):
 
     clear_screen()
     _render_character_summary(summary)
+
+    export_payload = {
+        "schema": "character_export_v1",
+        "name": draft.name,
+        "class_name": str(getattr(chosen_class, "name", "") or ""),
+        "subclass_slug": selected_subclass_slug or "",
+        "ability_scores": dict(draft.ability_scores),
+        "race": str(getattr(race, "name", "") or ""),
+        "subrace": str(getattr(selected_subrace, "name", "") or ""),
+        "background": str(getattr(background, "name", "") or ""),
+        "difficulty": str(getattr(difficulty, "name", "") or ""),
+        "alignment": str(alignment or ""),
+        "starting_equipment_override": list(selected_equipment_override or []),
+        "starting_gold_bonus": int(selected_starting_gold_bonus),
+        "selected_cantrips": list(selected_cantrips or []),
+        "selected_known_spells": list(selected_known_spells or []),
+        "selected_tool_proficiencies": list(selected_tool_proficiencies or []),
+        "selected_languages": list(selected_languages or []),
+        "personality_profile": dict(selected_personality_profile or {}),
+        "class_feature_choices": dict(selected_class_feature_choices or {}),
+        "selected_feat_slug": selected_feat_slug or "",
+        "generated_name_gender": str(getattr(draft, "name_gender", "") or ""),
+    }
+    try:
+        export_path = _write_character_export(export_payload)
+        if _CONSOLE is not None:
+            _CONSOLE.print(f"[bold green]Character sheet exported:[/bold green] {export_path}")
+        else:
+            print(f"Character sheet exported: {export_path}")
+    except Exception as exc:
+        if _CONSOLE is not None:
+            _CONSOLE.print(f"[bold red]Export failed:[/bold red] {exc}")
+        else:
+            print(f"Export failed: {exc}")
+
     try:
         _run_creation_skill_training_flow(game_service, character_id)
     except Exception:
