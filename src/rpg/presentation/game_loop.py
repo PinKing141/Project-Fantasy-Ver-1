@@ -1001,29 +1001,32 @@ def run_game_loop(game_service, character_id: int):
                 _run_explore(game_service, character_id)
 
         elif choice == 1:
-            destinations = game_service.get_travel_destinations_intent(character_id)
-            if destinations:
-                max_name_width = max(len(str(row.name)) for row in destinations)
-                options = [f"{str(row.name):<{max_name_width}} • {row.preview}" for row in destinations] + ["Back"]
-                selected = arrow_menu(context.travel_label, options)
-                if selected in {-1, len(options) - 1}:
-                    continue
-                destination = destinations[selected]
-                mode = _choose_travel_mode(context.current_location_name)
-                if mode is None:
-                    continue
-                pace = _choose_travel_pace(context.current_location_name)
-                if pace is None:
-                    continue
-                result = game_service.travel_intent(
-                    character_id,
-                    destination_id=destination.location_id,
-                    travel_mode=mode,
-                    travel_pace=pace,
-                )
-            else:
-                result = game_service.travel_intent(character_id)
-            messages = result.messages if result.messages else ["You travel onward."]
+            try:
+                destinations = game_service.get_travel_destinations_intent(character_id)
+                if destinations:
+                    max_name_width = max(len(str(row.name)) for row in destinations)
+                    options = [f"{str(row.name):<{max_name_width}} • {row.preview}" for row in destinations] + ["Back"]
+                    selected = arrow_menu(context.travel_label, options)
+                    if selected in {-1, len(options) - 1}:
+                        continue
+                    destination = destinations[selected]
+                    mode = _choose_travel_mode(context.current_location_name)
+                    if mode is None:
+                        continue
+                    pace = _choose_travel_pace(context.current_location_name)
+                    if pace is None:
+                        continue
+                    result = game_service.travel_intent(
+                        character_id,
+                        destination_id=destination.location_id,
+                        travel_mode=mode,
+                        travel_pace=pace,
+                    )
+                else:
+                    result = game_service.travel_intent(character_id)
+                messages = result.messages if result.messages else ["You travel onward."]
+            except Exception as exc:
+                messages = [f"Travel error: {exc}"]
             clear_screen()
             _render_message_panel("Travel", messages, border_style=_BORDER_LOOP, panel_key="loop")
             _prompt_continue()
@@ -1883,5 +1886,4 @@ def _scene_flavour(scene: dict, verbosity: str = "compact") -> str:
     lines = [line for line in (dist_line, surprise_line, terrain_line, weather_line) if line]
     limit = 2 if verbosity == "compact" else (3 if verbosity == "normal" else len(lines))
     return "\n".join(lines[:limit])
-
 

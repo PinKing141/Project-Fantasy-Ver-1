@@ -204,6 +204,35 @@ class CliFlowTests(unittest.TestCase):
         self.assertIn("Doomsday Bulletin", transcript)
         self.assertIn("Map Shrinks", transcript)
 
+
+
+    def test_travel_error_is_shown_in_loop_panel(self) -> None:
+        game, creation_service = cli._bootstrap_inmemory()
+
+        with mock.patch("builtins.input", side_effect=["Asha", "2"]), mock.patch("sys.stdout", new_callable=io.StringIO):
+            character_id = cli.run_character_creator(creation_service)
+
+        def _choose_menu(_title, _options):
+            if not hasattr(_choose_menu, "count"):
+                _choose_menu.count = 0
+            if _choose_menu.count == 0:
+                _choose_menu.count += 1
+                return 1
+            return 4
+
+        with mock.patch("rpg.presentation.game_loop._CONSOLE", None), mock.patch(
+            "rpg.presentation.game_loop.arrow_menu",
+            side_effect=_choose_menu,
+        ), mock.patch("rpg.presentation.game_loop._choose_travel_mode", return_value="road"), mock.patch(
+            "rpg.presentation.game_loop._choose_travel_pace", return_value="steady"
+        ), mock.patch.object(game, "get_travel_destinations_intent", return_value=[]), mock.patch.object(
+            game, "travel_intent", side_effect=RuntimeError("boom")
+        ), mock.patch("builtins.input", return_value=""), mock.patch("sys.stdout", new_callable=io.StringIO) as output:
+            run_game_loop(game, character_id)
+
+        transcript = output.getvalue()
+        self.assertIn("Travel error: boom", transcript)
+
     def test_scripted_cli_loop_records_travel_hop_and_turn_advance(self) -> None:
         game, creation_service = cli._bootstrap_inmemory()
 
