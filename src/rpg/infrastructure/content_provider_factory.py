@@ -2,9 +2,7 @@ import os
 
 from rpg.infrastructure.content_cache import FileContentCache
 from rpg.infrastructure.content_provider_client import FallbackContentClient
-from rpg.infrastructure.dnd5e_client import DnD5eClient
 from rpg.infrastructure.local_srd_provider import LocalSrdProvider
-from rpg.infrastructure.open5e_client import Open5eClient
 
 
 def _is_truthy(value: str | None, *, default: str = "0") -> bool:
@@ -12,7 +10,7 @@ def _is_truthy(value: str | None, *, default: str = "0") -> bool:
     return normalized in {"1", "true", "yes"}
 
 
-def _base_clients() -> tuple[LocalSrdProvider, DnD5eClient, Open5eClient, FileContentCache, int]:
+def _base_clients() -> tuple[LocalSrdProvider, FileContentCache, int, float, int, float]:
     timeout = float(os.getenv("RPG_CONTENT_TIMEOUT_S", "10"))
     retries = int(os.getenv("RPG_CONTENT_RETRIES", "2"))
     backoff_seconds = float(os.getenv("RPG_CONTENT_BACKOFF_S", "0.2"))
@@ -23,13 +21,11 @@ def _base_clients() -> tuple[LocalSrdProvider, DnD5eClient, Open5eClient, FileCo
 
     cache = FileContentCache(cache_dir)
     local = LocalSrdProvider(root_dir=local_dir, page_size=local_page_size)
-    dnd5e = DnD5eClient(timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
-    open5e = Open5eClient(timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
-    return local, dnd5e, open5e, cache, cache_ttl_seconds
+    return local, cache, cache_ttl_seconds, timeout, retries, backoff_seconds
 
 
 def create_runtime_content_client() -> FallbackContentClient:
-    local, dnd5e, open5e, cache, cache_ttl_seconds = _base_clients()
+    local, cache, cache_ttl_seconds, timeout, retries, backoff_seconds = _base_clients()
     local_enabled = _is_truthy(os.getenv("RPG_LOCAL_SRD_ENABLED"), default="1")
     runtime_remote_enabled = _is_truthy(os.getenv("RPG_CONTENT_RUNTIME_REMOTE_ENABLED"), default="0")
 
@@ -37,6 +33,11 @@ def create_runtime_content_client() -> FallbackContentClient:
     if local_enabled:
         providers.append(local)
     if runtime_remote_enabled:
+        from rpg.infrastructure.dnd5e_client import DnD5eClient
+        from rpg.infrastructure.open5e_client import Open5eClient
+
+        dnd5e = DnD5eClient(timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
+        open5e = Open5eClient(timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
         providers.extend([dnd5e, open5e])
     if not providers:
         providers = [local]
@@ -49,7 +50,12 @@ def create_runtime_content_client() -> FallbackContentClient:
 
 
 def create_import_content_client() -> FallbackContentClient:
-    local, dnd5e, open5e, cache, cache_ttl_seconds = _base_clients()
+    local, cache, cache_ttl_seconds, timeout, retries, backoff_seconds = _base_clients()
+    from rpg.infrastructure.dnd5e_client import DnD5eClient
+    from rpg.infrastructure.open5e_client import Open5eClient
+
+    dnd5e = DnD5eClient(timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
+    open5e = Open5eClient(timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
     include_local = _is_truthy(os.getenv("RPG_IMPORT_INCLUDE_LOCAL_SRD"), default="1")
     providers = [dnd5e, open5e]
     if include_local:

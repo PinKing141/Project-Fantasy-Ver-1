@@ -23,8 +23,8 @@ from rpg.infrastructure.inmemory.inmemory_quest_template_repo import InMemoryQue
 from rpg.infrastructure.inmemory.inmemory_world_repo import InMemoryWorldRepository
 from rpg.infrastructure.inmemory.atomic_persistence import create_inmemory_atomic_persistor
 from rpg.infrastructure.content_provider_factory import create_content_client_factory
-from rpg.infrastructure.datamuse_client import DatamuseClient
 from rpg.infrastructure.name_generation import DnDCorpusNameGenerator
+
 
 _NAME_GENERATOR_CACHE: dict[int, DnDCorpusNameGenerator] = {}
 
@@ -96,6 +96,8 @@ def _build_encounter_intro_builder():
     backoff_seconds = _safe_float_env("RPG_FLAVOUR_BACKOFF_S", 0.1, minimum=0.0)
     max_lines = _safe_int_env("RPG_FLAVOUR_MAX_LINES", 1, minimum=0)
 
+    from rpg.infrastructure.datamuse_client import DatamuseClient
+
     lexical = DatamuseClient(timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
     enricher = EncounterIntroEnricher(
         lexical_client=lexical,
@@ -114,6 +116,8 @@ def _build_mechanical_flavour_builder():
     retries = _safe_int_env("RPG_FLAVOUR_RETRIES", 0, minimum=0)
     backoff_seconds = _safe_float_env("RPG_FLAVOUR_BACKOFF_S", 0.1, minimum=0.0)
     max_words = _safe_int_env("RPG_FLAVOUR_MAX_WORDS", 8, minimum=1)
+
+    from rpg.infrastructure.datamuse_client import DatamuseClient
 
     lexical = DatamuseClient(timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
     enricher = MechanicalFlavourEnricher(lexical_client=lexical, enabled=True, max_words=max_words)
