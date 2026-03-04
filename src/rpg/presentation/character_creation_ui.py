@@ -1941,6 +1941,9 @@ def _select_multi_from_pool(
         elif len(selected) < target_count:
             selected.append(picked)
             status_line = f"Selected: {picked}"
+            if len(selected) >= target_count:
+                cursor_index = len(options) - 2
+                status_line = f"Selected: {picked}. Ready to confirm."
         else:
             status_line = f"Selection limit reached ({target_count}). Deselect one to change."
 
