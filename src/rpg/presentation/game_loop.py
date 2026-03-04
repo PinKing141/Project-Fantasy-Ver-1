@@ -1083,8 +1083,20 @@ def run_game_loop(game_service, character_id: int):
                     _prompt_continue()
                     continue
                 if char_choice == 1:
-                    journal = game_service.get_quest_journal_intent(character_id)
-                    _render_quest_journal(journal)
+                    try:
+                        journal = game_service.get_quest_journal_intent(character_id)
+                        _render_quest_journal(journal)
+                    except Exception:
+                        clear_screen()
+                        _render_message_panel(
+                            "Quest Journal",
+                            [
+                                "The quest journal is temporarily unavailable.",
+                                "You can keep playing and try opening it again after your next action.",
+                            ],
+                            border_style=_BORDER_QUEST,
+                            panel_key="quests",
+                        )
                     _prompt_continue()
                     continue
                 if char_choice == 3:

@@ -1,0 +1,42 @@
+{
+  "schema": "character_export_v1",
+  "name": "Valis Ironford",
+  "class_name": "Barbarian",
+  "subclass_slug": "",
+  "ability_scores": {
+    "STRENGTH": 15,
+    "STR": 14,
+    "DEX": 13,
+    "CON": 12,
+    "INT": 10,
+    "WIS": 8
+  },
+  "race": "Human",
+  "subrace": "",
+  "background": "Temple Envoy",
+  "difficulty": "Easy",
+  "alignment": "lawful_good",
+  "starting_equipment_override": [
+    "Greataxe",
+    "Explorer's Pack",
+    "Javelin x4"
+  ],
+  "starting_gold_bonus": 0,
+  "selected_cantrips": [],
+  "selected_known_spells": [],
+  "selected_tool_proficiencies": [
+    "Calligrapher's Supplies"
+  ],
+  "selected_languages": [
+    "Celestial"
+  ],
+  "personality_profile": {
+    "trait": "I speak softly, but with conviction.",
+    "ideal": "Hope",
+    "bond": "My temple trust must be restored.",
+    "flaw": "I avoid hard choices until too late."
+  },
+  "class_feature_choices": {},
+  "selected_feat_slug": "",
+  "generated_name_gender": "random"
+}

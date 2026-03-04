@@ -2204,10 +2204,13 @@ def _show_cancelled():
 
 
 def _run_creation_skill_training_flow(game_service, character_id: int) -> None:
-    initialize = game_service.initialize_skill_training_intent(
-        character_id,
-        grant_level_points=True,
-    )
+    try:
+        initialize = game_service.initialize_skill_training_intent(
+            character_id,
+            grant_level_points=True,
+        )
+    except Exception:
+        return
     clear_screen()
     if _CONSOLE is not None and Panel is not None:
         _CONSOLE.print(
@@ -2755,21 +2758,7 @@ def run_character_creation(game_service):
         else:
             print(f"Export failed: {exc}")
 
-    try:
-        _run_creation_skill_training_flow(game_service, character_id)
-    except Exception:
-        clear_screen()
-        if _CONSOLE is not None and Panel is not None:
-            _CONSOLE.print(
-                Panel.fit(
-                    "Skill training setup was skipped due to an initialization issue. You can continue and train from the Character menu.",
-                    title="[bold yellow]Skill Training Notice[/bold yellow]",
-                    border_style=_PANEL_BORDER,
-                )
-            )
-        else:
-            print("Skill training setup was skipped due to an initialization issue. You can continue and train from the Character menu.")
-        _prompt_enter()
+    _run_creation_skill_training_flow(game_service, character_id)
     print("")
     _prompt_enter("Press ENTER to begin your adventure...")
     return character_id
