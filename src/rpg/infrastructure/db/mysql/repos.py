@@ -161,6 +161,16 @@ def _table_columns(session, table_name: str) -> set[str]:
     return {str(row.COLUMN_NAME).lower() for row in rows}
 
 
+def _column_exists(session, table_name: str, column_name: str) -> bool:
+    try:
+        dialect = session.bind.dialect.name if session.bind is not None else "mysql"
+        quoted_table = f'"{table_name}"' if dialect == "sqlite" else f"`{table_name}`"
+        session.execute(text(f"SELECT {column_name} FROM {quoted_table} LIMIT 0"))
+        return True
+    except Exception:
+        return False
+
+
 class MysqlClassRepository(ClassRepository):
     def list_playable(self) -> List[CharacterClass]:
         with SessionLocal() as session:
@@ -282,6 +292,10 @@ class MysqlCharacterRepository(CharacterRepository):
         if "armour_class" in columns:
             return "armour_class"
         if "armor_class" in columns:
+            return "armor_class"
+        if _column_exists(session, "character", "armour_class"):
+            return "armour_class"
+        if _column_exists(session, "character", "armor_class"):
             return "armor_class"
         return "armour_class"
 

@@ -236,6 +236,38 @@ class MysqlCharacterRepositoryGuildHistoryTests(unittest.TestCase):
         self.assertEqual("conduct_change", rows[0]["event_kind"])
 
 
+class MysqlCharacterRepositoryArmorClassDetectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = create_engine("sqlite:///:memory:", future=True)
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE "character" (
+                        character_id INTEGER PRIMARY KEY,
+                        armor_class INTEGER
+                    )
+                    """
+                )
+            )
+
+        self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
+        self.session_patcher = mock.patch.object(mysql_repos, "SessionLocal", self.SessionLocal)
+        self.columns_patcher = mock.patch.object(mysql_repos, "_table_columns", return_value=set())
+        self.session_patcher.start()
+        self.columns_patcher.start()
+        self.repo = MysqlCharacterRepository()
+
+    def tearDown(self) -> None:
+        self.columns_patcher.stop()
+        self.session_patcher.stop()
+        self.engine.dispose()
+
+    def test_character_ac_column_falls_back_to_query_probe_for_american_spelling(self) -> None:
+        with self.SessionLocal() as session:
+            self.assertEqual("armor_class", self.repo._character_ac_column(session))
+
+
 class MysqlQuestTemplateRepositoryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = create_engine("sqlite:///:memory:", future=True)
